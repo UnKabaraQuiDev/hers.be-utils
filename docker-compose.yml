@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: webcal-cmp-push
+    container_name: hers.be-utils
     ports:
       - "${CONTAINER_PORT}:8080"
     shm_size: "1gb"
@@ -25,7 +25,7 @@ services:
       JAVA_TOOL_OPTIONS: -Duser.timezone=Europe/Luxembourg
     restart: unless-stopped
     volumes:
-      - db-data:/opt/webcal-cmp-push/db
+      - db-data:/opt/hers.be-utils/db
 
 volumes:
   db-data:

@@ -10,7 +10,7 @@
 	</parent>
 
 	<groupId>lu.kbra</groupId>
-	<artifactId>webcal-cmp-push</artifactId>
+	<artifactId>hers.be-utils</artifactId>
 	<version>0.1</version>
 
 	<properties>

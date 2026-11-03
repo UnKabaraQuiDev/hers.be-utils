@@ -21,11 +21,11 @@ RUN mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args
 
 RUN useradd --create-home --shell /bin/bash webcal
 
-WORKDIR /opt/webcal-cmp-push
+WORKDIR /opt/hers.be-utils
 
-COPY --from=build /build/target/webcal-cmp-push.jar webcal-cmp-push.jar
+COPY --from=build /build/target/hers.be-utils.jar hers.be-utils.jar
 
-RUN chown -R webcal:webcal /opt/webcal-cmp-push
+RUN chown -R webcal:webcal /opt/hers.be-utils
 USER webcal
 
 EXPOSE 8080
@@ -35,4 +35,4 @@ CMD java \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
     -Xms512m \
     -Xmx2g \
-    -jar webcal-cmp-push.jar
+    -jar hers.be-utils.jar
