@@ -33,6 +33,7 @@ EXPOSE 8080
 CMD java \
     -Djava.security.egd=file:/dev/./urandom \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
+    --enable-native-access=ALL-UNNAMED \
     -Xms512m \
     -Xmx2g \
     -jar hers.be-utils.jar

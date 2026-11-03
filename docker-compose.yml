@@ -20,12 +20,12 @@ services:
       CALENDAR_CLASS: ${CALENDAR_CLASS}
       CALENDAR_KEY: ${CALENDAR_KEY}
       MENU_FACEBOOK_COOKIES: ${MENU_FACEBOOK_COOKIES:-}
-      PCLIB_DB_SQLITE_PATH: "./db/"
+      PCLIB_DB_SQLITE_PATH: "/app/db/"
       TZ: Europe/Luxembourg
       JAVA_TOOL_OPTIONS: -Duser.timezone=Europe/Luxembourg
     restart: unless-stopped
     volumes:
-      - db-data:${REPO_DIR}/db
+      - db-data:/app/db
 
 volumes:
   db-data:
