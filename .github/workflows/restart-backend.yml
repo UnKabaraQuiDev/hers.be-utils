@@ -33,6 +33,7 @@ jobs:
             export CONTAINER_PORT="${{ vars.BACKEND_CONTAINER_PORT }}"
             export CALENDAR_URL="${{ vars.CALENDAR_URL }}"
             export MENU_FACEBOOK="${{ vars.MENU_FACEBOOK }}"
+            export MENU_COOKIES="${{ secrets.MENU_COOKIES }}"
             export NTFY_ALERT="${{ vars.NTFY_ALERT }}"
             export NTFY_MENU="${{ vars.NTFY_MENU }}"
             export EXT_ENABLED="${{ vars.EXT_ENABLED }}"
