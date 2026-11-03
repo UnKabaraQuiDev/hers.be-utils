@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 	
-RUN mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install-deps"
+RUN mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install-deps" || true
 
 RUN useradd --create-home --shell /bin/bash webcal
 
