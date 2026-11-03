@@ -59,3 +59,4 @@ Thumbs.db
 .local
 .flattened-pom.xml
 .fuse*
+*.sqlite

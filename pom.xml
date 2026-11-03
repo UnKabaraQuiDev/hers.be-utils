@@ -25,7 +25,7 @@
 			<dependency>
 				<groupId>lu.kbra</groupId>
 				<artifactId>pclib</artifactId>
-				<version>1.2.1</version>
+				<version>1.2.4</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -55,6 +55,11 @@
 			<groupId>org.apache.httpcomponents.client5</groupId>
 			<artifactId>httpclient5</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>com.microsoft.playwright</groupId>
+			<artifactId>playwright</artifactId>
+			<version>1.64.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.mnode.ical4j</groupId>
@@ -73,11 +78,24 @@
 			<groupId>lu.kbra</groupId>
 			<artifactId>pclib-datastruct</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>lu.kbra</groupId>
+			<artifactId>pclib-db-spring</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>lu.kbra</groupId>
+			<artifactId>pclib-db-sqlite</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-test</artifactId>
+			<scope>test</scope>
 		</dependency>
 	</dependencies>
 

@@ -19,8 +19,25 @@ calendar:
     password: ""
 
 ntfy:
-  topic: ""
+  alert: ""
+  menu: ""
+
+menu:
+  facebook: ""
+  title: "MENU DE LA SEMAINE"
+  cookies: ""
+  ocr:
+    executable: "tesseract"
+    language: "fra"
 
 logging:
   level:
     net.fortuna.ical4j.data.CalendarOutputter: ERROR
+    
+pclib:
+  db:
+    enabled: true
+    
+    sqlite:
+      protocol: sqlite
+      path: ""

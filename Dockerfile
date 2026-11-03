@@ -11,11 +11,20 @@ COPY src ./src
 RUN mvn clean package -B
 
 
-FROM eclipse-temurin:21-jre
+FROM mcr.microsoft.com/playwright/java:v1.64.0-noble
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /bin/bash webcal
 
 WORKDIR /opt/webcal-cmp-push
 
 COPY --from=build /build/target/webcal-cmp-push.jar webcal-cmp-push.jar
+
+RUN chown -R webcal:webcal /opt/webcal-cmp-push
+USER webcal
 
 EXPOSE 8080
 
@@ -23,5 +32,5 @@ CMD java \
     -Djava.security.egd=file:/dev/./urandom \
     --add-opens=java.base/java.lang=ALL-UNNAMED \
     -Xms512m \
-    -Xmx1g \
+    -Xmx2g \
     -jar webcal-cmp-push.jar

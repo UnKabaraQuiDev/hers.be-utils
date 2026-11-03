@@ -32,7 +32,9 @@ jobs:
 
             export CONTAINER_PORT="${{ vars.BACKEND_CONTAINER_PORT }}"
             export CALENDAR_URL="${{ vars.CALENDAR_URL }}"
-            export NTFY_TOPIC="${{ vars.NTFY_TOPIC }}"
+            export MENU_FACEBOOK="${{ vars.MENU_FACEBOOK }}"
+            export NTFY_ALERT="${{ vars.NTFY_ALERT }}"
+            export NTFY_MENU="${{ vars.NTFY_MENU }}"
             export EXT_ENABLED="${{ vars.EXT_ENABLED }}"
             export EXT_HOST="${{ secrets.EXT_HOST }}"
             export EXT_PASSWORD="${{ secrets.EXT_PASSWORD }}"

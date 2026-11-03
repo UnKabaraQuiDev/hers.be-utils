@@ -6,9 +6,12 @@ services:
     container_name: webcal-cmp-push
     ports:
       - "${CONTAINER_PORT}:8080"
+    shm_size: "1gb"
     environment:
       CALENDAR_URL: ${CALENDAR_URL}
-      NTFY_TOPIC: ${NTFY_TOPIC}
+      MENU_FACEBOOK: ${MENU_FACEBOOK}
+      NTFY_ALERT: ${NTFY_ALERT}
+      NTFY_MENU: ${NTFY_MENU}
       CALENDAR_PROXY_ENABLED: ${EXT_ENABLED}
       CALENDAR_PROXY_HOST: ${EXT_HOST}
       CALENDAR_PROXY_PORT: ${EXT_PORT}
@@ -16,6 +19,14 @@ services:
       CALENDAR_PROXY_PASSWORD: ${EXT_PASSWORD}
       CALENDAR_CLASS: ${CALENDAR_CLASS}
       CALENDAR_KEY: ${CALENDAR_KEY}
+      MENU_FACEBOOK_COOKIES: ${MENU_FACEBOOK_COOKIES:-}
+      PCLIB_DB_SQLITE_PATH: "./db/"
       TZ: Europe/Luxembourg
       JAVA_TOOL_OPTIONS: -Duser.timezone=Europe/Luxembourg
     restart: unless-stopped
+    volumes:
+      - db-data:/opt/webcal-cmp-push/db
+
+volumes:
+  db-data:
+  

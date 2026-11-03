@@ -1,10 +1,12 @@
 package lu.kbra.webcal_cmp.service;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -16,14 +18,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
-import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
 import lu.kbra.pclib.PCUtils;
 import lu.kbra.webcal_cmp.data.CalendarChanges;
 import lu.kbra.webcal_cmp.data.CalendarEvent;
 import lu.kbra.webcal_cmp.data.CalendarEventChange;
 import lu.kbra.webcal_cmp.data.CalendarEventWarning;
 import lu.kbra.webcal_cmp.data.EventData;
+import lu.kbra.webcal_cmp.db.data.MenuData;
+
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
@@ -33,8 +37,11 @@ public class PushNotificationService {
 
 	private final RestClient restClient;
 
-	@Value("${ntfy.topic}")
-	private String topic;
+	@Value("${ntfy.alert}")
+	private String alertTopic;
+
+	@Value("${ntfy.menu:}")
+	private String menuTopic;
 
 	public PushNotificationService(final ZoneId zone, final RestClient.Builder restClientBuilder) {
 		this.zone = zone;
@@ -43,7 +50,7 @@ public class PushNotificationService {
 
 	@PostConstruct
 	public void init() {
-		log.info("Using topic: " + topic);
+		PushNotificationService.log.info("Using topics: " + this.alertTopic + " / " + menuTopic);
 	}
 
 	public void sendCalendarChanged(final CalendarChanges changes) {
@@ -51,7 +58,7 @@ public class PushNotificationService {
 
 		try {
 			this.restClient.post()
-					.uri("/" + this.topic)
+					.uri("/" + this.alertTopic)
 					.header("X-Title", "Calendar changed")
 					.header("X-Priority", "high")
 					.header("X-Tags", "calendar")
@@ -60,8 +67,41 @@ public class PushNotificationService {
 					.body(body)
 					.retrieve()
 					.toBodilessEntity();
-		} catch (HttpClientErrorException v) {
+		} catch (final HttpClientErrorException v) {
 			v.printStackTrace();
+		}
+	}
+
+	public void sendMenu(final LocalDate date, final List<MenuData> menus) {
+		if (menus.isEmpty() || this.menuTopic == null || this.menuTopic.isBlank()) {
+			return;
+		}
+		final StringBuilder body = new StringBuilder();
+		menus.stream().sorted(Comparator.comparingInt(c -> c.getMealType().ordinal())).forEachOrdered(meal -> {
+			final String value = meal.getText();
+			if (value != null && !value.isBlank()) {
+				if (!body.isEmpty()) {
+					body.append("\n\n");
+				}
+				body.append("**" + PCUtils.capitalize(meal.getMealType().name().toLowerCase()) + "**\n").append(value);
+			}
+		});
+		if (body.isEmpty()) {
+			return;
+		}
+		final String dateLabel = date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale.FRENCH));
+		try {
+			this.restClient.post()
+					.uri("/" + this.menuTopic)
+					.header("X-Title", "Menu: " + dateLabel)
+					.header("X-Tags", "fork_and_knife")
+					.header("X-Markdown", "true")
+					.header("Content-Type", "text/plain; charset=utf-8")
+					.body(body.toString())
+					.retrieve()
+					.toBodilessEntity();
+		} catch (final Exception e) {
+			PushNotificationService.log.error("Failed to send menu notification for {}", date, e);
 		}
 	}
 
@@ -181,7 +221,7 @@ public class PushNotificationService {
 	public void sendFail(final Exception e) {
 		try {
 			this.restClient.post()
-					.uri("/" + this.topic)
+					.uri("/" + this.alertTopic)
 					.header("X-Title", "Error occured")
 					.header("X-Priority", "low")
 					.header("X-Tags", "calendar")
@@ -190,7 +230,7 @@ public class PushNotificationService {
 					.body("Error occured:\n" + PCUtils.toString(e))
 					.retrieve()
 					.toBodilessEntity();
-		} catch (HttpClientErrorException v) {
+		} catch (final HttpClientErrorException v) {
 			v.addSuppressed(e);
 			v.printStackTrace();
 		}
@@ -199,7 +239,7 @@ public class PushNotificationService {
 	public void sendOk() {
 		try {
 			this.restClient.post()
-					.uri("/" + this.topic)
+					.uri("/" + this.alertTopic)
 					.header("X-Title", "Error occured")
 					.header("X-Priority", "low")
 					.header("X-Tags", "calendar")
@@ -208,7 +248,7 @@ public class PushNotificationService {
 					.body("Back online.")
 					.retrieve()
 					.toBodilessEntity();
-		} catch (HttpClientErrorException v) {
+		} catch (final HttpClientErrorException v) {
 			v.printStackTrace();
 		}
 	}
