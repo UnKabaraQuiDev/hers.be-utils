@@ -27,7 +27,7 @@ jobs:
           script: |
             set -e
 
-            REPO_DIR="${{ vars.BACKEND_DIR }}}"
+            REPO_DIR="${{ vars.BACKEND_DIR }}"
             cd "$REPO_DIR"
 
             export CONTAINER_PORT="${{ vars.BACKEND_CONTAINER_PORT }}"
