@@ -3,6 +3,7 @@ package lu.kbra.webcal_cmp.endpoint;
 import java.util.Objects;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.fortuna.ical4j.model.Calendar;
 
 @Slf4j
+@Profile("calendar")
 @RestController
 @RequiredArgsConstructor
 public class Endpoints {

@@ -8,6 +8,7 @@ services:
       - "${CONTAINER_PORT}:8080"
     shm_size: "1gb"
     environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
       CALENDAR_URL: ${CALENDAR_URL}
       MENU_FACEBOOK: ${MENU_FACEBOOK}
       NTFY_ALERT: ${NTFY_ALERT}
@@ -16,7 +17,7 @@ services:
       DWN_PORTAL_INDEX: ${DWN_PORTAL_INDEX}
       DWN_PORTAL_USERNAME: ${DWN_PORTAL_USERNAME}
       DWN_PORTAL_PASSWORD: ${DWN_PORTAL_PASSWORD}
-      DWN_TARGET_DIR: /app/downloads/${DWN_BACK_DIR:-}
+      DWN_TARGET_DIR: /app/downloads/${DWN_BACK_DIR:-back}
       DWN_LINK_DIR: /app/downloads/${DWN_FRONT_DIR:-}
       DWN_ROOT_DIR: /app/downloads
       DWN_WEBHOOK_TOKEN: ${DWN_WEBHOOK_TOKEN}

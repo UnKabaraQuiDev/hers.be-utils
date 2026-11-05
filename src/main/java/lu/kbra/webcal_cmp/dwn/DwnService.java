@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import lu.kbra.pclib.PCUtils;
@@ -35,6 +36,7 @@ import lu.kbra.webcal_cmp.service.PushNotificationService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
+@Profile("files-hers")
 @Service
 public class DwnService {
 

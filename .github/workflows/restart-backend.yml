@@ -2,6 +2,12 @@ name: Restart Backend
 
 on:
   workflow_dispatch:
+    inputs:
+      active_profiles:
+        description: "Optional comma-separated Spring profiles; empty uses the repository active_profiles file"
+        required: false
+        type: string
+        default: ""
   workflow_run:
     workflows: ["Deploy Backend"]
     types: [completed]
@@ -12,6 +18,8 @@ jobs:
 
     steps:
       - name: Deploy to server
+        env:
+          ACTIVE_PROFILES_OVERRIDE: ${{ github.event.inputs.active_profiles || '' }}
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.BACKEND_HOST }}
@@ -24,11 +32,30 @@ jobs:
           proxy_username: ${{ secrets.PROXY_USER }} 
           proxy_key: ${{ secrets.PROXY_SSH_KEY }}
           
+          envs: ACTIVE_PROFILES_OVERRIDE
           script: |
             set -e
 
             REPO_DIR="${{ vars.BACKEND_DIR }}"
             cd "$REPO_DIR"
+
+            # workflow_dispatch input takes priority; workflow_run and blank input use the deployed file.
+            if [ -n "${ACTIVE_PROFILES_OVERRIDE:-}" ]; then
+              ACTIVE_PROFILES="$ACTIVE_PROFILES_OVERRIDE"
+            else
+              if [ ! -f active_profiles ]; then
+                echo "Missing $REPO_DIR/active_profiles" >&2
+                exit 1
+              fi
+              ACTIVE_PROFILES="$(cat active_profiles)"
+            fi
+            ACTIVE_PROFILES="$(printf '%s' "$ACTIVE_PROFILES" | tr -d '[:space:]')"
+            if ! printf '%s' "$ACTIVE_PROFILES" | grep -Eq '^(menu|calendar|files-hers)(,(menu|calendar|files-hers))*$'; then
+              echo "Invalid active_profiles: expected comma-separated menu,calendar,files-hers" >&2
+              exit 1
+            fi
+            export SPRING_PROFILES_ACTIVE="$ACTIVE_PROFILES"
+            echo "Starting Spring profiles: $SPRING_PROFILES_ACTIVE"
 
             export REPO_DIR="$REPO_DIR"
             export CONTAINER_PORT="${{ vars.BACKEND_CONTAINER_PORT }}"

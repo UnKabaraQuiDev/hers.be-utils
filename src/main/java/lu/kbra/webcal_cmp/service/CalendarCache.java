@@ -1,11 +1,13 @@
 package lu.kbra.webcal_cmp.service;
 
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import lu.kbra.webcal_cmp.data.CachedCalendar;
 
 import lombok.RequiredArgsConstructor;
 
+@Profile("calendar")
 @Service
 @RequiredArgsConstructor
 public class CalendarCache {

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,6 +18,7 @@ import lu.kbra.webcal_cmp.dwn.DwnService;
 
 import lombok.RequiredArgsConstructor;
 
+@Profile("files-hers")
 @RestController
 @RequiredArgsConstructor
 public class DwnEndpoint {
