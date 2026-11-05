@@ -1,9 +1,11 @@
 package lu.kbra.webcal_cmp.service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -23,6 +25,7 @@ import lu.kbra.webcal_cmp.data.CalendarChanges;
 import lu.kbra.webcal_cmp.data.CalendarEvent;
 import lu.kbra.webcal_cmp.data.CalendarEventChange;
 import lu.kbra.webcal_cmp.data.CalendarEventWarning;
+import lu.kbra.webcal_cmp.data.DownloadReport;
 import lu.kbra.webcal_cmp.data.EventData;
 import lu.kbra.webcal_cmp.db.data.MenuData;
 
@@ -40,8 +43,17 @@ public class PushNotificationService {
 	@Value("${ntfy.alert}")
 	private String alertTopic;
 
-	@Value("${ntfy.menu:}")
+	@Value("${ntfy.menu}")
 	private String menuTopic;
+
+	@Value("${ntfy.files}")
+	private String filesTopic;
+
+	@Value("${dwn.webhook-token}")
+	private String dwnWebhookToken;
+
+	@Value("${spring.application.host-url}")
+	private String hostUrl;
 
 	public PushNotificationService(final ZoneId zone, final RestClient.Builder restClientBuilder) {
 		this.zone = zone;
@@ -50,7 +62,7 @@ public class PushNotificationService {
 
 	@PostConstruct
 	public void init() {
-		PushNotificationService.log.info("Using topics: " + this.alertTopic + " / " + menuTopic);
+		PushNotificationService.log.info("Using topics: " + this.alertTopic + " / " + this.menuTopic + " / " + this.filesTopic);
 	}
 
 	public void sendCalendarChanged(final CalendarChanges changes) {
@@ -102,6 +114,68 @@ public class PushNotificationService {
 					.toBodilessEntity();
 		} catch (final Exception e) {
 			PushNotificationService.log.error("Failed to send menu notification for {}", date, e);
+		}
+	}
+
+	public void sendFiles(final DownloadReport report) {
+		if (report.downloads().isEmpty() || this.filesTopic == null || this.filesTopic.isBlank()) {
+			return;
+		}
+		final List<String> entries = new ArrayList<>();
+		for (final DownloadReport.Item item : report.downloads()) {
+			final String icon = switch (item.status()) {
+			case "new" -> "➕";
+			case "updated" -> "🔄";
+			default -> "📥";
+			};
+			entries.add(icon + " **" + item.status() + "** [" + item.course() + "] " + item.filename() + "\n  `" + item.path() + "`\n");
+		}
+		if (!report.failures().isEmpty()) {
+			entries.add("\n**Failures**\n");
+			for (final DownloadReport.Failure failure : report.failures()) {
+				final String reason = failure.reason().length() > 450 ? failure.reason().substring(0, 450) + "..." : failure.reason();
+				entries.add("❌ [" + failure.course() + "] " + failure.resource() + ": " + reason + "\n");
+			}
+		}
+		final String heading = "Downloaded: " + report.downloads().size() + " | Checked: " + report.filesChecked() + " | Failed: "
+				+ report.failures().size() + "\n\n";
+		// ntfy has a per-message size limit. Break long first-run reports into chunks.
+		final List<String> chunks = new ArrayList<>();
+		final StringBuilder chunk = new StringBuilder(heading);
+		for (final String entry : entries) {
+			if (chunk.toString().getBytes(StandardCharsets.UTF_8).length + entry.getBytes(StandardCharsets.UTF_8).length > 3000
+					&& chunk.length() > heading.length()) {
+				chunks.add(chunk.toString());
+				chunk.setLength(0);
+				chunk.append(heading);
+			}
+			chunk.append(entry);
+		}
+		if (chunk.length() > heading.length()) {
+			chunks.add(chunk.toString());
+		}
+		for (int i = 0; i < chunks.size(); i++) {
+			try {
+				this.restClient.post()
+						.uri("/" + this.filesTopic)
+						.header("X-Title",
+								"HERS: " + report.downloads().size() + " file(s) downloaded (" + (i + 1) + "/" + chunks.size() + ")")
+						.header("X-Tags", "file_folder")
+						.header("X-Markdown", "true")
+						.header("Content-Type", "text/plain; charset=utf-8")
+						.headers(headers -> {
+							if (this.dwnWebhookToken != null && !this.dwnWebhookToken.isBlank()) {
+								headers.set("X-Actions",
+										"http, Refresh files, " + this.hostUrl + "/dwn, method=POST, " + "headers.Authorization=Bearer "
+												+ this.dwnWebhookToken + ", body=");
+							}
+						})
+						.body(chunks.get(i))
+						.retrieve()
+						.toBodilessEntity();
+			} catch (final Exception e) {
+				PushNotificationService.log.error("Failed sending HERS file notification part {} of {}", i + 1, chunks.size(), e);
+			}
 		}
 	}
 

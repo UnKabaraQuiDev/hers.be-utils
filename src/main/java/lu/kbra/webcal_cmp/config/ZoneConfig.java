@@ -10,8 +10,8 @@ import org.springframework.context.annotation.Configuration;
 public class ZoneConfig {
 
 	@Bean
-	ZoneId zone(@Value("${calendar.zone:Europe/Luxembourg}") String zone) {
+	ZoneId zone(@Value("${calendar.zone:Europe/Luxembourg}") final String zone) {
 		return ZoneId.of(zone);
 	}
-	
+
 }

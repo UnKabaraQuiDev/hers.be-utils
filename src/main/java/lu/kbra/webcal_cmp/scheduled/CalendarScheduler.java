@@ -3,8 +3,9 @@ package lu.kbra.webcal_cmp.scheduled;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import lombok.RequiredArgsConstructor;
 import lu.kbra.webcal_cmp.service.CheckCalendarService;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor

@@ -21,7 +21,7 @@ jobs:
 
           proxy_host: ${{ secrets.PROXY_HOST }}
           proxy_port: ${{ secrets.PROXY_PORT }}
-          proxy_username: ${{ secrets.PROXY_USER }}
+          proxy_username: ${{ secrets.PROXY_USER }} 
           proxy_key: ${{ secrets.PROXY_SSH_KEY }}
           
           script: |
@@ -37,6 +37,7 @@ jobs:
             export MENU_COOKIES="${{ secrets.MENU_COOKIES }}"
             export NTFY_ALERT="${{ vars.NTFY_ALERT }}"
             export NTFY_MENU="${{ vars.NTFY_MENU }}"
+            export NTFY_FILES="${{ vars.NTFY_FILES }}"
             export EXT_ENABLED="${{ vars.EXT_ENABLED }}"
             export EXT_HOST="${{ secrets.EXT_HOST }}"
             export EXT_PASSWORD="${{ secrets.EXT_PASSWORD }}"
@@ -44,6 +45,13 @@ jobs:
             export EXT_USERNAME="${{ secrets.EXT_USERNAME }}"
             export CALENDAR_CLASS="${{ vars.CLASS_NAME }}"
             export CALENDAR_KEY="${{ vars.CALENDAR_KEY }}"
+            export DWN_WEBHOOK_TOKEN="${{ vars.DWN_WEBHOOK_TOKEN }}"
+            export DWN_PORTAL_INDEX="${{ vars.DWN_PORTAL_INDEX }}"
+            export DWN_PORTAL_USERNAME="${{ secrets.DWN_PORTAL_USERNAME }}"
+            export DWN_PORTAL_PASSWORD="${{ secrets.DWN_PORTAL_PASSWORD }}"
+            export DWN_BACK_DIR="${{ vars.DWN_BACK_DIR }}"
+            export DWN_FRONT_DIR="${{ vars.DWN_FRONT_DIR }}"
+            export DWN_TARGET_HOST_DIR="${{ vars.DWN_TARGET_HOST_DIR }}"
 
             docker compose up -d --remove-orphans
 

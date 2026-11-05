@@ -60,3 +60,10 @@ Thumbs.db
 .flattened-pom.xml
 .fuse*
 *.sqlite
+
+# Local credentials and downloaded course materials
+.env
+.env.*
+db/
+downloads/
+onedrive/

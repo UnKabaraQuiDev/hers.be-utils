@@ -10,11 +10,12 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import lu.kbra.webcal_cmp.service.CheckCalendarService;
+import lu.kbra.webcal_cmp.service.IcsParser;
+
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import lu.kbra.webcal_cmp.service.CheckCalendarService;
-import lu.kbra.webcal_cmp.service.IcsParser;
 import net.fortuna.ical4j.model.Calendar;
 
 @Slf4j
@@ -30,7 +31,7 @@ public class Endpoints {
 
 	@PostConstruct
 	public void init() {
-		log.info("Key: {}", key);
+		Endpoints.log.info("Key: {}", this.key);
 	}
 
 	@PostMapping("/refresh")
@@ -49,7 +50,7 @@ public class Endpoints {
 		}
 
 		final Calendar cal = this.parser.getCalendar();
-		final String transformed = checkCalendarService.storeTransformed(cal);
+		final String transformed = this.checkCalendarService.storeTransformed(cal);
 
 		return ResponseEntity.ok().contentType(MediaType.parseMediaType("text/calendar")).body(transformed);
 	}

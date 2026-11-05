@@ -2,8 +2,9 @@ package lu.kbra.webcal_cmp.service;
 
 import org.springframework.stereotype.Service;
 
-import lombok.RequiredArgsConstructor;
 import lu.kbra.webcal_cmp.data.CachedCalendar;
+
+import lombok.RequiredArgsConstructor;
 
 @Service
 @RequiredArgsConstructor
@@ -13,18 +14,18 @@ public class CalendarCache {
 	private String transformed;
 
 	public synchronized CachedCalendar get() {
-		return events;
+		return this.events;
 	}
 
-	public synchronized void set(CachedCalendar events) {
+	public synchronized void set(final CachedCalendar events) {
 		this.events = events;
 	}
 
 	public synchronized String getTransformed() {
-		return transformed;
+		return this.transformed;
 	}
 
-	public synchronized void setTransformed(String transformed) {
+	public synchronized void setTransformed(final String transformed) {
 		this.transformed = transformed;
 	}
 

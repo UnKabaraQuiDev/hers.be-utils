@@ -14,7 +14,7 @@ import lu.kbra.webcal_cmp.db.data.MenuData;
 @Component
 public abstract class MenuTable extends DeferredDatabaseTable<MenuData> {
 
-	protected MenuTable(DeferredDatabase database) {
+	protected MenuTable(final DeferredDatabase database) {
 		super(database);
 	}
 

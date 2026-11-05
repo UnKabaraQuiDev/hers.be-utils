@@ -27,16 +27,16 @@ public class MenuData implements DatabaseEntry {
 	@Nullable
 	private @MaxLength(512) String text;
 
-	public MenuData(LocalDate date) {
+	public MenuData(final LocalDate date) {
 		this.date = date;
 	}
 
-	public MenuData(LocalDate date, MealType mealType) {
+	public MenuData(final LocalDate date, final MealType mealType) {
 		this.date = date;
 		this.mealType = mealType;
 	}
 
-	public MenuData(LocalDate date, MealType mealType, String text) {
+	public MenuData(final LocalDate date, final MealType mealType, final String text) {
 		this.date = date;
 		this.mealType = mealType;
 		this.text = text;

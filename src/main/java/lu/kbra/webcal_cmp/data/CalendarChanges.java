@@ -9,7 +9,7 @@ public record CalendarChanges(
 		Set<CalendarEventWarning> warning) {
 
 	public boolean hasChanges() {
-		return !added.isEmpty() || !removed.isEmpty() || !modified.isEmpty() || !warning.isEmpty();
+		return !this.added.isEmpty() || !this.removed.isEmpty() || !this.modified.isEmpty() || !this.warning.isEmpty();
 	}
 
 }

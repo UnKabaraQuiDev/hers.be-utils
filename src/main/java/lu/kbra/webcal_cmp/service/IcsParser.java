@@ -26,8 +26,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
-import lombok.RequiredArgsConstructor;
 import lu.kbra.webcal_cmp.data.CalendarEvent;
+
+import lombok.RequiredArgsConstructor;
 import net.fortuna.ical4j.data.CalendarBuilder;
 import net.fortuna.ical4j.data.CalendarOutputter;
 import net.fortuna.ical4j.data.ParserException;

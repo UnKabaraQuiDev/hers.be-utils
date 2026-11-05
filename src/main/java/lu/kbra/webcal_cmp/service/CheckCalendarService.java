@@ -14,13 +14,14 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import lu.kbra.webcal_cmp.data.CachedCalendar;
 import lu.kbra.webcal_cmp.data.CalendarChanges;
 import lu.kbra.webcal_cmp.data.CalendarEvent;
 import lu.kbra.webcal_cmp.data.CalendarEventWarning;
 import lu.kbra.webcal_cmp.data.CalendarEventWarning.WarningType;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.fortuna.ical4j.model.Calendar;
 import net.fortuna.ical4j.validate.ValidationException;
 

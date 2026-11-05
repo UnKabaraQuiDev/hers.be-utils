@@ -9,7 +9,7 @@ import org.springframework.web.client.RestClient;
 public class FetchService {
 
 	private final RestClient restClient;
-	
+
 	@Value("${calendar.url}")
 	private String url;
 
@@ -19,7 +19,7 @@ public class FetchService {
 
 	@Cacheable("calendars")
 	public String downloadCalendar() {
-		return this.restClient.get().uri(url).retrieve().body(String.class);
+		return this.restClient.get().uri(this.url).retrieve().body(String.class);
 	}
 
 }

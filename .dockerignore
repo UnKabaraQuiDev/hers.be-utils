@@ -1,2 +1,10 @@
 .git/
 target/
+db/
+downloads/
+.env
+.env.*
+*.part
+*.download
+*.zip
+!.env.dwn.example

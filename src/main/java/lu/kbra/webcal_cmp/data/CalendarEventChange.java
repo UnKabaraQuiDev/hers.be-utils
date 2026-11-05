@@ -4,8 +4,9 @@ import java.time.Instant;
 
 public record CalendarEventChange(CalendarEvent oldEvent, CalendarEvent newEvent) implements EventData {
 
+	@Override
 	public Instant getNewStartTime() {
-		return newEvent.start();
+		return this.newEvent.start();
 	}
 
 }
