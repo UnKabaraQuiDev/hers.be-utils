@@ -64,6 +64,5 @@ Thumbs.db
 # Local credentials and downloaded course materials
 .env
 .env.*
-db/
 downloads/
 onedrive/
