@@ -11,6 +11,7 @@ import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
+import lu.kbra.pclib.datastructure.tuple.ReadOnlyPair;
 import lu.kbra.webcal_cmp.data.MealType;
 import lu.kbra.webcal_cmp.db.data.MenuData;
 import lu.kbra.webcal_cmp.db.table.MenuTable;
@@ -37,9 +38,9 @@ public class MenuService {
 		}
 	}
 
-	public synchronized void dailyNotification() {
+	public synchronized void dailyNotification(final boolean nextDay) {
 		final ZonedDateTime now = ZonedDateTime.now(this.zone);
-		final LocalDate today = now.toLocalDate();
+		final LocalDate today = nextDay ? now.toLocalDate().plusDays(1) : now.toLocalDate();
 		try {
 			if (today.getDayOfWeek().getValue() > DayOfWeek.FRIDAY.getValue()) {
 				this.ensureCached(MenuService.targetMonday(now));
@@ -51,7 +52,12 @@ public class MenuService {
 				this.ensureCached(MenuService.targetMonday(now));
 			}
 			final List<MenuData> menu = this.menus.byDate(today);
+			if (menu.stream().allMatch(MenuData::isSentNotification)) {
+				return;
+			}
 			this.notifications.sendMenu(today, menu);
+			menu.forEach(c -> c.setSentNotification(true));
+			this.menus.updateAll(menu);
 		} catch (final Exception e) {
 			MenuService.log.error("Menu notification check failed for {}", today, e);
 		}

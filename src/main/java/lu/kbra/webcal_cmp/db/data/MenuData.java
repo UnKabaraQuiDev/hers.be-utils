@@ -4,6 +4,7 @@ import java.time.LocalDate;
 
 import lu.kbra.pclib.PCUtils;
 import lu.kbra.pclib.db.annotations.entry.Column;
+import lu.kbra.pclib.db.annotations.entry.DefaultValue;
 import lu.kbra.pclib.db.annotations.entry.Nullable;
 import lu.kbra.pclib.db.annotations.entry.PrimaryKey;
 import lu.kbra.pclib.db.annotations.entry.def.MaxLength;
@@ -26,6 +27,10 @@ public class MenuData implements DatabaseEntry {
 	@Column
 	@Nullable
 	private @MaxLength(512) String text;
+
+	@Column
+	@DefaultValue("'0'")
+	private boolean sentNotification = false;
 
 	public MenuData(final LocalDate date) {
 		this.date = date;

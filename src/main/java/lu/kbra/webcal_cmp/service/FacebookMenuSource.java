@@ -26,6 +26,8 @@ import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.WaitUntilState;
 
+import lu.kbra.pclib.datastructure.tuple.ReadOnlyPair;
+import lu.kbra.pclib.datastructure.tuple.Tuples;
 import lu.kbra.webcal_cmp.db.data.MenuData;
 
 import lombok.RequiredArgsConstructor;
@@ -70,11 +72,6 @@ public class FacebookMenuSource {
 				for (int scroll = 0; scroll <= FacebookMenuSource.MAX_SCROLLS && seen.size() < FacebookMenuSource.MAX_IMAGES; scroll++) {
 					boolean encounteredOlder = false;
 					for (final ImageRef photo : this.readImages(page)) {
-						final LocalDate posted = this.postedOn(photo.timestamp());
-						if (posted != null && posted.isBefore(earliest)) {
-							encounteredOlder = true;
-							continue;
-						}
 						if (!seen.add(photo.url()) || seen.size() > FacebookMenuSource.MAX_IMAGES
 								|| !FacebookMenuSource.allowedImageUrl(photo.url())) {
 							continue;
@@ -131,21 +128,6 @@ public class FacebookMenuSource {
 			if (!name.isBlank()) {
 				context.addCookies(List.of(new Cookie(name, value).setDomain(".facebook.com").setPath("/").setSecure(true)));
 			}
-		}
-	}
-
-	private LocalDate postedOn(final String timestamp) {
-		if (timestamp == null || timestamp.isBlank()) {
-			return null;
-		}
-		try {
-			if (timestamp.matches("\\d{10,13}")) {
-				final long value = Long.parseLong(timestamp);
-				return Instant.ofEpochMilli(timestamp.length() == 13 ? value : value * 1000).atZone(this.zone).toLocalDate();
-			}
-			return Instant.parse(timestamp).atZone(this.zone).toLocalDate();
-		} catch (DateTimeParseException | NumberFormatException ignored) {
-			return null;
 		}
 	}
 

@@ -4,6 +4,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -59,6 +60,10 @@ public class MenuOcrService {
 			return Optional.empty();
 		}
 
+		if (!this.matchesDateRange(image, monday)) {
+			return Optional.empty();
+		}
+
 		final String heading = this.ocr(image, 0.275, 0.060, 0.750, 0.155, "6", null);
 		if (!MenuOcrService.matchesHeading(heading, this.title)) {
 			return Optional.empty();
@@ -89,10 +94,31 @@ public class MenuOcrService {
 		return MenuOcrService.normalize(scanned).contains(MenuOcrService.normalize(expected));
 	}
 
+	private boolean matchesDateRange(final BufferedImage image, final LocalDate monday) throws IOException, InterruptedException {
+		final String broad = this.ocr(image, 0.350, 0.151, 0.655, 0.225, "6", null);
+		if (MenuOcrService.matchesWeek(broad, monday)) {
+			return true;
+		}
+
+		final String tightLine = this.ocr(image, 0.380, 0.158, 0.600, 0.210, "7", null);
+		if (MenuOcrService.matchesWeek(tightLine, monday)) {
+			return true;
+		}
+
+		final String tightRawLine = this.ocr(image, 0.380, 0.158, 0.600, 0.210, "13", null);
+		if (MenuOcrService.matchesWeek(tightRawLine, monday)) {
+			return true;
+		}
+
+		// Some images perform better with the wider crop and raw-line mode.
+		final String broadRawLine = this.ocr(image, 0.350, 0.151, 0.655, 0.225, "13", null);
+		return MenuOcrService.matchesWeek(broadRawLine, monday);
+	}
+
 	/** Requires the Monday and Friday day numbers and at least one month. */
 	static boolean matchesWeek(final String scanned, final LocalDate monday) {
 		final LocalDate friday = monday.plusDays(4);
-		final String normalized = scanned.toUpperCase(Locale.ROOT).replace('O', '0').replace('I', '1').replace('L', '1');
+		final String normalized = scanned.toUpperCase(Locale.ROOT).replace('O', '0').replace("M", "11").replace('I', '1').replace('L', '1');
 		final String firstDay = "%02d".formatted(monday.getDayOfMonth());
 		final String lastDay = "%02d".formatted(friday.getDayOfMonth());
 		final String startMonth = "%02d".formatted(monday.getMonthValue());
@@ -169,4 +195,5 @@ public class MenuOcrService {
 			Files.deleteIfExists(input);
 		}
 	}
+
 }
