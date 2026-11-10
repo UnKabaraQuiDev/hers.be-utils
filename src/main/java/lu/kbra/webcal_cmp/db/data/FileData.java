@@ -7,9 +7,13 @@ import lu.kbra.pclib.db.annotations.entry.PrimaryKey;
 import lu.kbra.pclib.db.annotations.entry.def.MaxLength;
 import lu.kbra.pclib.db.impl.DatabaseEntry;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class FileData implements DatabaseEntry {
 
 	@Column
@@ -39,30 +43,14 @@ public class FileData implements DatabaseEntry {
 	@Nullable
 	private @MaxLength(2048) String linkRelativePath;
 
-	public FileData() {
-	}
-
-	public FileData(
-			final String remoteId,
-			final int version,
-			final String courseCode,
-			final String originalName,
-			final String relativePath,
-			final String sha256,
-			final String downloadedAt,
-			final String linkRelativePath) {
+	public FileData(String remoteId, int version) {
 		this.remoteId = remoteId;
 		this.version = version;
-		this.courseCode = courseCode;
-		this.originalName = originalName;
-		this.relativePath = relativePath;
-		this.sha256 = sha256;
-		this.downloadedAt = downloadedAt;
-		this.linkRelativePath = linkRelativePath;
 	}
 
 	@Override
 	public FileData clone() {
 		return PCUtils.safeClone(super::clone);
 	}
+
 }

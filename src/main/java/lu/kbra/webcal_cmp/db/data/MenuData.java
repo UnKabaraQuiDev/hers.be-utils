@@ -12,8 +12,10 @@ import lu.kbra.pclib.db.impl.DatabaseEntry;
 import lu.kbra.webcal_cmp.data.MealType;
 
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@NoArgsConstructor
 public class MenuData implements DatabaseEntry {
 
 	@Column
