@@ -134,6 +134,8 @@ public class FileStoreService {
 		this.verifyAvailable();
 		final Path back = this.back(source);
 		final String filename = FileStoreService.safePart(originalName, "download");
+		final String cleanCourse = FileNameNormalizer.normalize(courseCode);
+		final String cleanName = FileNameNormalizer.normalize(originalName);
 		Path base = back.resolve(FileStoreService.safePart(courseCode, "course"));
 		if (subdirectory != null && !subdirectory.isBlank()) {
 			for (final String segment : subdirectory.split("/")) {
@@ -156,8 +158,12 @@ public class FileStoreService {
 					throw new IOException("Cannot restore over a non-file: " + current);
 				}
 				this.writeWithRetries(temp, current);
-				report.success(courseCode, originalName, "restored", this.root.relativize(current).toString(), remoteHash);
+				report.success(cleanCourse, cleanName, "restored", this.root.relativize(current).toString(), remoteHash);
 			}
+			// The hash is unchanged, but previous releases may have stored a
+			// mojibake name. Rename this version and its symlink without creating
+			// a fake new download/version. Never rename locally modified files.
+			this.renameUnchangedFile(source, latest, filename, cleanCourse, cleanName, remoteHash, report);
 			this.ensureLink(source, latest, report);
 			return; // Preserve local modifications to old OneDrive versions.
 		}
@@ -167,7 +173,7 @@ public class FileStoreService {
 		this.writeWithRetries(temp, destination);
 		final String relativePath = back.relativize(destination).toString();
 		final int version = latest == null ? 1 : latest.getVersion() + 1;
-		final FileData entry = this.create(source, remoteId, version, courseCode, originalName, relativePath, remoteHash);
+		final FileData entry = this.create(source, remoteId, version, cleanCourse, cleanName, relativePath, remoteHash);
 		try {
 			this.insert(source, entry);
 		} catch (final RuntimeException e) {
@@ -179,11 +185,99 @@ public class FileStoreService {
 			throw e;
 		}
 		this.ensureLink(source, entry, report);
-		report.success(courseCode,
-				originalName,
+		report.success(cleanCourse,
+				cleanName,
 				latest == null ? "new" : "updated",
 				this.root.relativize(destination).toString(),
 				remoteHash);
+	}
+
+
+	/**
+	 * Repairs the latest backed file on a rescan when the server content is
+	 * unchanged. Historical versions and locally changed files are left alone.
+	 * A database update failure rolls the move back, and collisions never overwrite.
+	 */
+	private void renameUnchangedFile(
+			final FileSource source,
+			final FileData entry,
+			final String filename,
+			final String course,
+			final String name,
+			final String hash,
+			final DownloadReport report) throws IOException {
+		final Path back = this.back(source);
+		final Path previous = this.existingPath(source, entry);
+		if (!Files.isRegularFile(previous, LinkOption.NOFOLLOW_LINKS)
+				|| !hash.equals(FileStoreService.sha256(previous))) {
+			return;
+		}
+		// Keep the historical folder structure, but normalize every segment.
+		// Only rename a file after verifying it still has the downloaded bytes.
+		Path parent = back;
+		final Path oldRelative = back.relativize(previous);
+		for (int i = 0; i < oldRelative.getNameCount() - 1; i++) {
+			parent = parent.resolve(FileStoreService.safePart(oldRelative.getName(i).toString(), "section"));
+		}
+		final Path desired = parent.resolve(filename).normalize();
+		if (!desired.startsWith(back) || desired.equals(back)) {
+			throw new IOException("Unsafe normalized backing file path: " + desired);
+		}
+		if (previous.equals(desired) && Objects.equals(entry.getOriginalName(), name)
+				&& Objects.equals(entry.getCourseCode(), course)) {
+			return;
+		}
+
+		final String previousRelative = entry.getRelativePath();
+		final String previousName = entry.getOriginalName();
+		final String previousCourse = entry.getCourseCode();
+		final String previousLink = entry.getLinkRelativePath();
+		Path destination = previous;
+		boolean moved = false;
+		if (!previous.equals(desired)) {
+			this.safeCreateDirectories(desired.getParent());
+			// Never overwrite another resource's bytes or a historical version.
+			final List<FileData> reserved = new ArrayList<>(this.courseHistory(source, previousCourse));
+			reserved.removeIf(row -> Objects.equals(row.getRemoteId(), entry.getRemoteId())
+					&& row.getVersion() == entry.getVersion());
+			destination = FileStoreService.availablePath(back, desired, reserved);
+			// A normal move refuses collisions; do not use REPLACE_EXISTING.
+			Files.move(previous, destination);
+			moved = true;
+		}
+		entry.setRelativePath(back.relativize(destination).toString());
+		entry.setOriginalName(name);
+		entry.setCourseCode(course);
+		try {
+			this.update(source, entry);
+		} catch (final RuntimeException e) {
+			entry.setRelativePath(previousRelative);
+			entry.setOriginalName(previousName);
+			entry.setCourseCode(previousCourse);
+			if (moved) {
+				try {
+					Files.move(destination, previous);
+				} catch (final IOException rollback) {
+					e.addSuppressed(rollback);
+				}
+			}
+			throw e;
+		}
+		if (moved && previousLink != null && !previousLink.isBlank()) {
+			final Path oldLink = this.root.resolve(previousLink).normalize();
+			if (oldLink.startsWith(this.root) && !oldLink.equals(this.root)
+					&& FileStoreService.linkPointsTo(oldLink, previous)) {
+				try {
+					Files.delete(oldLink); // Own symlink only; never delete a real file.
+				} catch (final IOException e) {
+					FileStoreService.log.warn("Could not unlink old name {} after rename: {}", oldLink, e.getMessage());
+				}
+			}
+		}
+		if (moved) {
+			FileStoreService.log.info("Renamed unchanged {} backing resource {} to {}", source, previousRelative, entry.getRelativePath());
+			report.success(course, name, "renamed", this.root.relativize(destination).toString(), hash);
+		}
 	}
 
 	public void storeUrl(
@@ -328,7 +422,7 @@ public class FileStoreService {
 
 					if (matcher.matches()) {
 						final String replacement = matcher.replaceFirst(pair[1]);
-						final Path target = this.front.resolve(replacement).normalize();
+						final Path target = this.front.resolve(FileNameNormalizer.normalize(replacement)).normalize();
 
 						if (!target.startsWith(this.front) || target.equals(this.front)) {
 							throw new IOException("PATHS.csv destination outside frontend");
@@ -341,7 +435,7 @@ public class FileStoreService {
 
 					if (candidate.startsWith(prefix)) {
 						final Path remainder = prefix.relativize(candidate);
-						final Path target = this.front.resolve(pair[1]).resolve(remainder).normalize();
+						final Path target = this.front.resolve(FileNameNormalizer.normalize(pair[1])).resolve(remainder).normalize();
 
 						if (!target.startsWith(this.front) || target.equals(this.front)) {
 							throw new IOException("PATHS.csv destination outside frontend");
@@ -497,7 +591,7 @@ public class FileStoreService {
 		if (raw == null) {
 			return fallback;
 		}
-		final String name = raw.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_").replaceAll("^\\.+", "_").replaceAll("[. ]+$", "").strip();
+		final String name = FileNameNormalizer.normalize(raw).replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_").replaceAll("^\\.+", "_").replaceAll("[. ]+$", "").strip();
 		return name.isBlank() || name.matches("[._-]+") ? fallback
 				: name.length() > 200 ? name.substring(0, 200)
 				: name;

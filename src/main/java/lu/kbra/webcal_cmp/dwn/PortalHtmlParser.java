@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import lu.kbra.webcal_cmp.files.FileNameNormalizer;
+
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -47,7 +49,7 @@ public final class PortalHtmlParser {
 			}
 			final Element row = e.closest(".fwAccueilCoursRow");
 			final String title = row == null ? code : row.select(".fwAccueilCoursLib").text();
-			found.putIfAbsent(code, new Course(code, title.isBlank() ? code : title, url));
+			found.putIfAbsent(code, new Course(code, FileNameNormalizer.normalize(title.isBlank() ? code : title), url));
 		}
 		return List.copyOf(found.values());
 	}
@@ -67,7 +69,7 @@ public final class PortalHtmlParser {
 			final String id = PortalHtmlParser.query(url, "ai_idEs");
 			if (id != null && id.matches("\\d+")) {
 				final String label = e.text().isBlank() ? "Resource " + id : e.text();
-				found.putIfAbsent(id, new Resource(label, url));
+				found.putIfAbsent(id, new Resource(FileNameNormalizer.normalize(label), url));
 			}
 		}
 		return List.copyOf(found.values());
@@ -88,7 +90,7 @@ public final class PortalHtmlParser {
 			}
 			final Element row = e.closest("tr");
 			final String name = row != null && row.select("td").size() >= 2 ? row.select("td").get(1).text().strip() : "file-" + file;
-			found.putIfAbsent(es + ":" + file, new Asset(es, file, name, url));
+			found.putIfAbsent(es + ":" + file, new Asset(es, file, FileNameNormalizer.normalize(name), url));
 		}
 		return List.copyOf(found.values());
 	}

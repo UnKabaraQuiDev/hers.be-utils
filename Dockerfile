@@ -13,6 +13,9 @@ RUN mvn clean package -B
 
 FROM mcr.microsoft.com/playwright/java:v1.64.0-noble
 
+# Ensure Java can access old Unicode filenames while migrating them to ASCII.
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr tesseract-ocr-fra tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*

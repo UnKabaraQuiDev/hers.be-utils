@@ -5,6 +5,7 @@ import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
 import java.net.URLDecoder;
+import lu.kbra.webcal_cmp.files.DownloadFileName;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -413,18 +414,7 @@ public class DwnPortalClient {
 	}
 
 	private static String filename(final String disposition, final URI uri) {
-		final Matcher utf8 = Pattern.compile("(?i)filename\\*\\s*=\\s*(?:UTF-8'')?([^;]+)").matcher(disposition);
-		if (utf8.find()) {
-			return URLDecoder.decode(utf8.group(1).replace("\"", "").strip(), StandardCharsets.UTF_8);
-		}
-		final Matcher normal = Pattern.compile("(?i)filename\\s*=\\s*(?:\"([^\"]+)\"|([^;]+))").matcher(disposition);
-		if (normal.find()) {
-			return (normal.group(1) != null ? normal.group(1) : normal.group(2)).strip();
-		}
-		final String path = uri.getPath();
-		final String segment = path.substring(path.lastIndexOf('/') + 1);
-		return segment.isBlank() || segment.endsWith(".php") ? "resource-" + Integer.toHexString(uri.toString().hashCode()) + ".bin"
-				: URLDecoder.decode(segment, StandardCharsets.UTF_8);
+		return DownloadFileName.resolve(disposition, uri, "", "resource");
 	}
 
 	private static boolean isMoodleHost(final URI uri) {

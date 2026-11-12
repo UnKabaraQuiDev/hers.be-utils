@@ -2,7 +2,7 @@ package lu.kbra.webcal_cmp.moodle;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLDecoder;
+import lu.kbra.webcal_cmp.files.DownloadFileName;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,8 +63,6 @@ public class MoodleBrowserClient {
 	private static final int NAVIGATION_TIMEOUT_MS = 60_000;
 	private static final int RENDER_TIMEOUT_MS = 30_000;
 	private static final int MAX_COURSE_PAGES = 100;
-	private static final Pattern FILENAME_STAR = Pattern.compile("(?i)filename\\*\\s*=\\s*(?:UTF-8'')?([^;]+)");
-	private static final Pattern FILENAME = Pattern.compile("(?i)filename\\s*=\\s*(?:\"([^\"]+)\"|([^;]+))");
 
 	private final String username;
 	private final String password;
@@ -441,28 +439,16 @@ public class MoodleBrowserClient {
 					if (document.selectFirst("form:has(input[type=password]), a.login-identityprovider-btn") != null) {
 						throw new IOException("Moodle session expired during attachment download");
 					}
-					final Element link = document.selectFirst("""
-							#region-main iframe[src*='pluginfile.php'], #region-main object[data*='pluginfile.php'],
-							#region-main a[href*='pluginfile.php'], .resourceworkaround a[href],
-							#region-main a[href*='/mod/resource/download.php']
-							""");
-					if (link == null) {
-						throw new IOException("Moodle attachment returned HTML without a file link: " + uri);
-					}
-					final String href = link.hasAttr("href") ? link.attr("href")
-							: link.hasAttr("src") ? link.attr("src")
-							: link.attr("data");
-					final URI target = actual.resolve(href.replace("&amp;", "&"));
-					requireMoodle(target);
-					if (target.equals(uri)) {
-						throw new IOException("Moodle preview links back to the same page: " + uri);
+					final URI target = resourceFileTarget(document, actual);
+					if (target == null) {
+						throw new IOException("Moodle attachment returned HTML without a file link or inline image: " + uri);
 					}
 					return this.downloadResource(target, depth + 1);
 				}
 				final Path temp = Files.createTempFile("moodle-file-", ".download");
 				try {
 					Files.write(temp, bytes);
-					return new MoodleDownload(temp, fileName(disposition, actual));
+					return new MoodleDownload(temp, fileName(disposition, actual, contentType));
 				} catch (final IOException e) {
 					Files.deleteIfExists(temp);
 					throw e;
@@ -512,7 +498,7 @@ public class MoodleBrowserClient {
 				final URI current = URI.create(url);
 				final String html;
 				try {
-					this.page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+					page.waitForLoadState(LoadState.DOMCONTENTLOADED);
 					html = this.page.content();
 				} catch (final PlaywrightException e) {
 					// A JavaScript redirect can destroy the page context during inspection.
@@ -651,18 +637,55 @@ public class MoodleBrowserClient {
 		}
 	}
 
-	private static String fileName(final String disposition, final URI uri) {
-		final Matcher encoded = FILENAME_STAR.matcher(disposition);
-		if (encoded.find()) {
-			return URLDecoder.decode(encoded.group(1).replace("\"", "").strip(), StandardCharsets.UTF_8);
+	/**
+	 * Resolve an attachment from a Moodle resource preview. Images are often embedded instead of linked
+	 * (resourcecontent resourceimg / resourceimage). Only download from Moodle, not from arbitrary HTML
+	 * image sources.
+	 */
+	static URI resourceFileTarget(final String html, final URI pageUri) throws IOException {
+		return resourceFileTarget(Jsoup.parse(html, pageUri.toString()), pageUri);
+	}
+
+	private static URI resourceFileTarget(final Document document, final URI pageUri) throws IOException {
+		requireMoodle(pageUri);
+		// Moodle's "Display: Embed" mode puts a real image in the resource page,
+		// not a link. Prefer this element over any unrelated anchor on the page.
+		Element link = document.selectFirst("""
+				#region-main .resourcecontent.resourceimg img.resourceimage[src],
+				#region-main .resourcecontent.resourceimg img[src]
+				""");
+		if (link == null) {
+			link = document.selectFirst("""
+					#region-main iframe[src*='pluginfile.php'],
+					#region-main object[data*='pluginfile.php'],
+					#region-main a[href*='pluginfile.php'],
+					#region-main .resourceworkaround a[href],
+					#region-main a[href*='/mod/resource/download.php']
+					""");
 		}
-		final Matcher simple = FILENAME.matcher(disposition);
-		if (simple.find()) {
-			return (simple.group(1) != null ? simple.group(1) : simple.group(2)).strip();
+		if (link == null) {
+			return null;
 		}
-		final String path = uri.getPath();
-		final String last = path.substring(path.lastIndexOf('/') + 1);
-		return last.isBlank() || last.endsWith(".php") ? "moodle-resource-" + Integer.toHexString(uri.toString().hashCode()) + ".bin"
-				: URLDecoder.decode(last, StandardCharsets.UTF_8);
+		final String href = link.hasAttr("href") ? link.attr("href")
+				: link.hasAttr("src") ? link.attr("src")
+				: link.attr("data");
+		if (href.isBlank()) {
+			throw new IOException("Moodle resource preview has an empty attachment URL");
+		}
+		final URI target;
+		try {
+			target = pageUri.resolve(href.replace("&amp;", "&"));
+		} catch (final IllegalArgumentException e) {
+			throw new IOException("Moodle resource preview has an invalid attachment URL", e);
+		}
+		requireMoodle(target);
+		if (target.equals(pageUri)) {
+			throw new IOException("Moodle resource preview links back to itself");
+		}
+		return target;
+	}
+
+	static String fileName(final String disposition, final URI uri, final String contentType) {
+		return DownloadFileName.resolve(disposition, uri, contentType, "moodle-resource");
 	}
 }

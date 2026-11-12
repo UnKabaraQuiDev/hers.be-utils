@@ -13,6 +13,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import lu.kbra.webcal_cmp.files.FileStoreService;
+import lu.kbra.webcal_cmp.files.FileNameNormalizer;
 
 /** Parses server-rendered Moodle course cards and activity lists, not navigation/sidebar duplicates. */
 public final class MoodleHtmlParser {
@@ -52,7 +53,7 @@ public final class MoodleHtmlParser {
 			}
 			final Matcher code = COURSE_CODE.matcher(title);
 			found.putIfAbsent(id, new Course(id, code.find() ? code.group(1) : "course-" + id,
-					title, base.resolve(titleLink.attr("href"))));
+					FileNameNormalizer.normalize(title), base.resolve(titleLink.attr("href"))));
 		}
 		// Some themes render enrolled course lists without cards.
 		if (found.isEmpty()) {
@@ -64,7 +65,7 @@ public final class MoodleHtmlParser {
 				final String title = anchor.text().strip();
 				final Matcher code = COURSE_CODE.matcher(title);
 				found.putIfAbsent(id, new Course(id, code.find() ? code.group(1) : "course-" + id,
-						title, base.resolve(anchor.attr("href"))));
+						FileNameNormalizer.normalize(title), base.resolve(anchor.attr("href"))));
 			}
 		}
 		return List.copyOf(found.values());
@@ -98,7 +99,7 @@ public final class MoodleHtmlParser {
 					sections.add(0, FileStoreService.safePart(name, "section"));
 				}
 			}
-			found.putIfAbsent(type.name() + ':' + id, new Activity(id, title,
+			found.putIfAbsent(type.name() + ':' + id, new Activity(id, FileNameNormalizer.normalize(title),
 					String.join("/", sections), type, base.resolve(link.attr("href"))));
 		}
 		return List.copyOf(found.values());
