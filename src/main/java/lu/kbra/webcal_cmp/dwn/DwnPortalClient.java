@@ -12,7 +12,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -143,14 +142,15 @@ public class DwnPortalClient {
 	private Page authenticateIfRequired(Page page) throws IOException, InterruptedException {
 		boolean submittedCredentials = false;
 		for (int i = 0; i < 12; i++) {
-			Files.writeString(Paths.get("" + System.currentTimeMillis() + ".html"), page.html());
 			final Document doc = Jsoup.parse(page.html(), page.uri().toString());
 			final Element login = doc.selectFirst("form:has(input[type=password])");
 			if (login != null) {
+				// Moodle also has a local password form. Never send the shared HERS
+				// credentials to it: the caller must first follow the MyHERS SSO button.
+				DwnPortalClient.requireIdentityProviderLoginUri(page.uri());
 				if (submittedCredentials) {
-					throw new IOException("Login form returned after submitting credentials (invalid credentials or MFA)");
+					throw new IOException("SimpleSAML login form returned after submitting credentials (invalid credentials or MFA)");
 				}
-				DwnPortalClient.requireTrustedLoginUri(page.uri());
 				page = this.submitForm(login, page.uri(), true);
 				submittedCredentials = true;
 				continue;
@@ -182,7 +182,7 @@ public class DwnPortalClient {
 		final String action = form.hasAttr("action") && !form.attr("action").isBlank() ? form.attr("action") : current.toString();
 		final URI target = current.resolve(action.replace("&amp;", "&"));
 		if (credentials) {
-			DwnPortalClient.requireTrustedLoginUri(target);
+			DwnPortalClient.requireIdentityProviderLoginUri(target);
 		} else if (!DwnPortalClient.isHersHost(target)) {
 			throw new IOException("Unexpected SAML form target host: " + target.getHost());
 		}
@@ -242,31 +242,59 @@ public class DwnPortalClient {
 		return new Page(response.uri(), response.body());
 	}
 
-	/** Follow the HERS-hosted Moodle SAML button, then reopen the requested page. */
+	/**
+	 * Login to Moodle via its external "Se connecter avec MyHERS" provider.
+	 * Moodle's own password form must never receive the HERS SSO credentials.
+	 */
 	public Page getMoodlePage(final URI uri) throws IOException, InterruptedException {
 		DwnPortalClient.requireMoodleUri(uri);
-		Page page = this.authenticateIfRequired(this.get(uri));
-		for (int step = 0; step < 3; step++) {
-			final Document doc = Jsoup.parse(page.html(), page.uri().toString());
-			final Element button = doc.selectFirst("a[href*='/auth/saml2/login.php']");
-			final Element form = doc.selectFirst("form[action*='/auth/saml2/login.php']");
-			if (button == null && form == null) {
-				break;
+		Page page = this.get(uri);
+		for (int step = 0; step < 5; step++) {
+			if (DwnPortalClient.isMoodleHost(page.uri())) {
+				// Important: inspect the provider button BEFORE handling password forms.
+				// The Moodle login screen displays both at the same time.
+				final URI samlLogin = DwnPortalClient.moodleSamlLoginUrl(page);
+				if (samlLogin != null) {
+					this.authenticateIfRequired(this.get(samlLogin));
+					page = this.get(uri);
+					continue;
+				}
+				final Document doc = Jsoup.parse(page.html(), page.uri().toString());
+				final Element samlForm = doc.selectFirst("form[action*='/auth/saml2/login.php']");
+				if (samlForm != null) {
+					this.authenticateIfRequired(this.submitForm(samlForm, page.uri(), false));
+					page = this.get(uri);
+					continue;
+				}
+				if (DwnPortalClient.hasLoginForm(page.html()) || "/login/index.php".equals(page.uri().getPath())) {
+					throw new IOException("Moodle login page has no usable MyHERS SAML provider button");
+				}
+				return page;
 			}
-			if (button != null) {
-				final URI saml = page.uri().resolve(button.attr("href"));
-				DwnPortalClient.requireMoodleUri(saml);
-				this.authenticateIfRequired(this.get(saml));
-			} else {
-				this.authenticateIfRequired(this.submitForm(form, page.uri(), false));
+			if (!DwnPortalClient.isHersHost(page.uri())) {
+				throw new IOException("Unexpected Moodle SAML redirect host: " + page.uri().getHost());
 			}
-			page = this.authenticateIfRequired(this.get(uri));
+			// Some Moodle entrypoints redirect directly to the identity provider.
+			this.authenticateIfRequired(page);
+			page = this.get(uri);
 		}
-		if (!DwnPortalClient.isMoodleHost(page.uri()) || DwnPortalClient.hasLoginForm(page.html()) || Jsoup.parse(page.html())
-				.selectFirst("a[href*='/auth/saml2/login.php'], form[action*='/auth/saml2/login.php']") != null) {
-			throw new IOException("Moodle SAML login did not complete: " + page.uri().getPath());
+		throw new IOException("Moodle MyHERS SAML authentication did not complete: " + uri.getPath());
+	}
+
+	/** Read the external SAML provider target from Moodle's current login page. */
+	static URI moodleSamlLoginUrl(final Page page) throws IOException {
+		if (!DwnPortalClient.isMoodleHost(page.uri())) {
+			return null;
 		}
-		return page;
+		final Document doc = Jsoup.parse(page.html(), page.uri().toString());
+		final Element button = doc.selectFirst(
+				".login-identityproviders a[href*='/auth/saml2/login.php'], a.login-identityprovider-btn[href*='/auth/saml2/login.php']");
+		if (button == null) {
+			return null;
+		}
+		final URI target = page.uri().resolve(button.attr("href"));
+		DwnPortalClient.requireMoodleUri(target);
+		return target;
 	}
 
 	public record MoodleDownload(Path path, String filename) {
@@ -419,9 +447,17 @@ public class DwnPortalClient {
 				&& ("hers.be".equalsIgnoreCase(host) || host.toLowerCase().endsWith(".hers.be"));
 	}
 
-	private static void requireTrustedLoginUri(final URI uri) throws IOException {
-		if (!DwnPortalClient.isHersHost(uri)) {
-			throw new IOException("Refusing to submit SSO credentials outside HTTPS hers.be: " + uri.getHost());
+	/** Credentials may only be submitted to the HERS SimpleSAML identity provider. */
+	static boolean isIdentityProviderLoginUri(final URI uri) {
+		return uri != null && "https".equalsIgnoreCase(uri.getScheme())
+				&& "idp.hers.be".equalsIgnoreCase(uri.getHost())
+				&& "/simplesaml/module.php/core/loginuserpass".equals(uri.getPath());
+	}
+
+	private static void requireIdentityProviderLoginUri(final URI uri) throws IOException {
+		if (!DwnPortalClient.isIdentityProviderLoginUri(uri)) {
+			throw new IOException("Refusing password form outside HERS SimpleSAML loginuserpass: " + uri.getHost()
+					+ uri.getPath());
 		}
 	}
 

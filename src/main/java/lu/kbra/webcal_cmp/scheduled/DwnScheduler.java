@@ -33,6 +33,7 @@ public class DwnScheduler {
 
 	@EventListener(ApplicationReadyEvent.class)
 	public void onApplicationReady() {
+		this.files.scheduledScan();
 		this.moodle.scheduledScan();
 	}
 

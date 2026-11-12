@@ -23,16 +23,15 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import lu.kbra.webcal_cmp.data.DownloadReport;
 import lu.kbra.webcal_cmp.data.FileSource;
-import lu.kbra.webcal_cmp.db.data.MoodleFileData;
-import lu.kbra.webcal_cmp.db.data.MyHersFileData;
+import lu.kbra.webcal_cmp.db.data.FileData;
 import lu.kbra.webcal_cmp.db.table.FileTable;
-import lu.kbra.webcal_cmp.db.table.MoodleFileTable;
 import lu.kbra.webcal_cmp.service.PushNotificationService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +46,7 @@ public class FileStoreService {
 	}
 
 	private final FileTable myHersTable;
-	private final MoodleFileTable moodleTable;
+	private final FileTable moodleTable;
 	private final PushNotificationService notifications;
 	private final Path root;
 	private final Path front;
@@ -57,8 +56,8 @@ public class FileStoreService {
 	private final int retryDelaySeconds;
 
 	public FileStoreService(
-			final FileTable myHersTable,
-			final MoodleFileTable moodleTable,
+			@Qualifier("myhersFileTable") final FileTable myHersTable,
+			@Qualifier("moodleFileTable") final FileTable moodleTable,
 			final PushNotificationService notifications,
 			@Value("${dwn.root-dir}") final String rootDir,
 			@Value("${dwn.link-dir}") final String frontDir,
@@ -147,8 +146,8 @@ public class FileStoreService {
 		if (!base.startsWith(back)) {
 			throw new IOException("Unsafe backing file path");
 		}
-		final List<? extends FileEntry> history = this.history(source, remoteId);
-		final FileEntry latest = history.stream().max(Comparator.comparingInt(FileEntry::getVersion)).orElse(null);
+		final List<? extends FileData> history = this.history(source, remoteId);
+		final FileData latest = history.stream().max(Comparator.comparingInt(FileData::getVersion)).orElse(null);
 		final String remoteHash = FileStoreService.sha256(temp);
 		final Path current = latest == null ? null : this.existingPath(source, latest);
 		if (latest != null && Objects.equals(remoteHash, latest.getSha256())) {
@@ -162,13 +161,13 @@ public class FileStoreService {
 			this.ensureLink(source, latest, report);
 			return; // Preserve local modifications to old OneDrive versions.
 		}
-		final List<FileEntry> reserved = new ArrayList<>(history);
+		final List<FileData> reserved = new ArrayList<>(history);
 		reserved.addAll(this.courseHistory(source, courseCode));
 		final Path destination = FileStoreService.availablePath(back, base, reserved);
 		this.writeWithRetries(temp, destination);
 		final String relativePath = back.relativize(destination).toString();
 		final int version = latest == null ? 1 : latest.getVersion() + 1;
-		final FileEntry entry = this.create(source, remoteId, version, courseCode, originalName, relativePath, remoteHash);
+		final FileData entry = this.create(source, remoteId, version, courseCode, originalName, relativePath, remoteHash);
 		try {
 			this.insert(source, entry);
 		} catch (final RuntimeException e) {
@@ -209,11 +208,11 @@ public class FileStoreService {
 		}
 	}
 
-	private List<? extends FileEntry> history(final FileSource source, final String id) {
+	private List<? extends FileData> history(final FileSource source, final String id) {
 		return source == FileSource.MY_HERS ? this.myHersTable.byRemoteId(id) : this.moodleTable.byRemoteId(id);
 	}
 
-	private List<FileEntry> courseHistory(final FileSource source, final String code) {
+	private List<FileData> courseHistory(final FileSource source, final String code) {
 		return new ArrayList<>(source == FileSource.MY_HERS ? this.myHersTable.byCourseCode(code) : this.moodleTable.byCourseCode(code));
 	}
 
@@ -221,7 +220,7 @@ public class FileStoreService {
 		return source == FileSource.MY_HERS ? this.myHersBack : this.moodleBack;
 	}
 
-	private FileEntry create(
+	private FileData create(
 			final FileSource source,
 			final String id,
 			final int version,
@@ -230,27 +229,19 @@ public class FileStoreService {
 			final String path,
 			final String hash) {
 		final String now = Instant.now().toString();
-		return source == FileSource.MY_HERS ? new MyHersFileData(id, version, code, originalName, path, hash, now, null)
-				: new MoodleFileData(id, version, code, originalName, path, hash, now, null);
+		return source == FileSource.MY_HERS ? new FileData(id, version, code, originalName, path, hash, now, null)
+				: new FileData(id, version, code, originalName, path, hash, now, null);
 	}
 
-	private void insert(final FileSource source, final FileEntry entry) {
-		if (source == FileSource.MY_HERS) {
-			this.myHersTable.loadIfExistsElseInsert((MyHersFileData) entry);
-		} else {
-			this.moodleTable.loadIfExistsElseInsert((MoodleFileData) entry);
-		}
+	private void insert(final FileSource source, final FileData entry) {
+		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).loadIfExistsElseInsert((FileData) entry);
 	}
 
-	private void update(final FileSource source, final FileEntry entry) {
-		if (source == FileSource.MY_HERS) {
-			this.myHersTable.update((MyHersFileData) entry);
-		} else {
-			this.moodleTable.update((MoodleFileData) entry);
-		}
+	private void update(final FileSource source, final FileData entry) {
+		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).update((FileData) entry);
 	}
 
-	private Path existingPath(final FileSource source, final FileEntry entry) throws IOException {
+	private Path existingPath(final FileSource source, final FileData entry) throws IOException {
 		final Path back = this.back(source);
 		final Path result = back.resolve(entry.getRelativePath()).normalize();
 		if (!result.startsWith(back) || result.equals(back)) {
@@ -259,7 +250,7 @@ public class FileStoreService {
 		return result;
 	}
 
-	private void ensureLink(final FileSource source, final FileEntry entry, final DownloadReport report) {
+	private void ensureLink(final FileSource source, final FileData entry, final DownloadReport report) {
 		try {
 			final Path backed = this.existingPath(source, entry);
 			if (!Files.isRegularFile(backed, LinkOption.NOFOLLOW_LINKS)) {
@@ -471,8 +462,8 @@ public class FileStoreService {
 		throw last == null ? new IOException("Failed to persist download") : last;
 	}
 
-	static Path availablePath(final Path root, final Path base, final List<? extends FileEntry> history) {
-		final Set<String> paths = history.stream().map(FileEntry::getRelativePath).collect(Collectors.toSet());
+	static Path availablePath(final Path root, final Path base, final List<? extends FileData> history) {
+		final Set<String> paths = history.stream().map(FileData::getRelativePath).collect(Collectors.toSet());
 		final String basename = base.getFileName().toString();
 		final int dot = basename.lastIndexOf('.');
 		final String stem = dot > 0 ? basename.substring(0, dot) : basename;
