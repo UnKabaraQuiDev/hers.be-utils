@@ -9,19 +9,19 @@ import lu.kbra.pclib.db.annotations.query.Param;
 import lu.kbra.pclib.db.annotations.query.Query;
 import lu.kbra.pclib.db.base.DeferredDatabase;
 import lu.kbra.pclib.db.table.DeferredDatabaseTable;
-import lu.kbra.webcal_cmp.db.data.FileData;
+import lu.kbra.webcal_cmp.db.data.MyHersFileData;
 
 @Profile("files-hers")
 @Component
-public abstract class FileTable extends DeferredDatabaseTable<FileData> {
+public abstract class FileTable extends DeferredDatabaseTable<MyHersFileData> {
 
 	protected FileTable(final DeferredDatabase database) {
 		super(database);
 	}
 
 	@Query
-	public abstract List<FileData> byRemoteId(@Param String remoteId);
+	public abstract List<MyHersFileData> byRemoteId(@Param String remoteId);
 
 	@Query
-	public abstract List<FileData> byCourseCode(@Param String courseCode);
+	public abstract List<MyHersFileData> byCourseCode(@Param String courseCode);
 }

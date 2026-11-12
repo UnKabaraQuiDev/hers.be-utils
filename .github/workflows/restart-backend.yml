@@ -77,6 +77,9 @@ jobs:
             export DWN_PORTAL_USERNAME="${{ secrets.DWN_PORTAL_USERNAME }}"
             export DWN_PORTAL_PASSWORD="${{ secrets.DWN_PORTAL_PASSWORD }}"
             export DWN_BACK_DIR="${{ vars.DWN_BACK_DIR }}"
+            export MOODLE_BACK_DIR="${{ vars.MOODLE_BACK_DIR }}"
+            export MOODLE_COURSES_URL="${{ vars.MOODLE_COURSES_URL }}"
+            export DWN_DIRECTORY_RETRY_DELAY_SECONDS="${{ vars.DWN_DIRECTORY_RETRY_DELAY_SECONDS }}"
             export DWN_FRONT_DIR="${{ vars.DWN_FRONT_DIR }}"
             export DWN_TARGET_HOST_DIR="${{ vars.DWN_TARGET_HOST_DIR }}"
 

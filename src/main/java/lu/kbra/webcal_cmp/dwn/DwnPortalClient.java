@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -11,11 +12,14 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -35,6 +39,7 @@ public class DwnPortalClient {
 	}
 
 	private final HttpClient http;
+	private final HttpClient noRedirectHttp;
 	private final URI index;
 	private final String username;
 	private final String password;
@@ -42,20 +47,26 @@ public class DwnPortalClient {
 	private final int retries;
 
 	public DwnPortalClient(
-			@Value("${dwn.portal.index:}") final String index,
-			@Value("${dwn.portal.username:}") final String username,
-			@Value("${dwn.portal.password:}") final String password,
-			@Value("${dwn.download-timeout-seconds:900}") final int downloadTimeoutSeconds,
-			@Value("${dwn.retries:3}") final int retries) {
+			@Value("${dwn.myhers.index}") final String index,
+			@Value("${dwn.portal.username}") final String username,
+			@Value("${dwn.portal.password}") final String password,
+			@Value("${dwn.download-timeout-seconds}") final int downloadTimeoutSeconds,
+			@Value("${dwn.retries}") final int retries) {
 		this.index = index == null || index.isBlank() ? null : URI.create(index);
 		this.username = username;
 		this.password = password;
 		this.downloadTimeoutSeconds = Math.max(20, downloadTimeoutSeconds);
 		this.retries = Math.max(1, retries);
+		final CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
 		this.http = HttpClient.newBuilder()
-				.cookieHandler(new CookieManager(null, CookiePolicy.ACCEPT_ALL))
+				.cookieHandler(cookies)
 				.connectTimeout(Duration.ofSeconds(30))
 				.followRedirects(HttpClient.Redirect.NORMAL)
+				.build();
+		this.noRedirectHttp = HttpClient.newBuilder()
+				.cookieHandler(cookies)
+				.connectTimeout(Duration.ofSeconds(30))
+				.followRedirects(HttpClient.Redirect.NEVER)
 				.build();
 	}
 
@@ -132,6 +143,7 @@ public class DwnPortalClient {
 	private Page authenticateIfRequired(Page page) throws IOException, InterruptedException {
 		boolean submittedCredentials = false;
 		for (int i = 0; i < 12; i++) {
+			Files.writeString(Paths.get("" + System.currentTimeMillis() + ".html"), page.html());
 			final Document doc = Jsoup.parse(page.html(), page.uri().toString());
 			final Element login = doc.selectFirst("form:has(input[type=password])");
 			if (login != null) {
@@ -228,6 +240,173 @@ public class DwnPortalClient {
 			throw new IOException("SSO form returned HTTP " + response.statusCode());
 		}
 		return new Page(response.uri(), response.body());
+	}
+
+	/** Follow the HERS-hosted Moodle SAML button, then reopen the requested page. */
+	public Page getMoodlePage(final URI uri) throws IOException, InterruptedException {
+		DwnPortalClient.requireMoodleUri(uri);
+		Page page = this.authenticateIfRequired(this.get(uri));
+		for (int step = 0; step < 3; step++) {
+			final Document doc = Jsoup.parse(page.html(), page.uri().toString());
+			final Element button = doc.selectFirst("a[href*='/auth/saml2/login.php']");
+			final Element form = doc.selectFirst("form[action*='/auth/saml2/login.php']");
+			if (button == null && form == null) {
+				break;
+			}
+			if (button != null) {
+				final URI saml = page.uri().resolve(button.attr("href"));
+				DwnPortalClient.requireMoodleUri(saml);
+				this.authenticateIfRequired(this.get(saml));
+			} else {
+				this.authenticateIfRequired(this.submitForm(form, page.uri(), false));
+			}
+			page = this.authenticateIfRequired(this.get(uri));
+		}
+		if (!DwnPortalClient.isMoodleHost(page.uri()) || DwnPortalClient.hasLoginForm(page.html()) || Jsoup.parse(page.html())
+				.selectFirst("a[href*='/auth/saml2/login.php'], form[action*='/auth/saml2/login.php']") != null) {
+			throw new IOException("Moodle SAML login did not complete: " + page.uri().getPath());
+		}
+		return page;
+	}
+
+	public record MoodleDownload(Path path, String filename) {
+	}
+
+	/** Resolve an authenticated Moodle resource to its actual pluginfile attachment. */
+	public MoodleDownload downloadMoodleResource(final URI uri) throws IOException, InterruptedException {
+		DwnPortalClient.requireMoodleUri(uri);
+		IOException last = null;
+		for (int i = 1; i <= this.retries; i++) {
+			try {
+				return this.downloadMoodleResource(uri, 0);
+			} catch (final IOException e) {
+				last = e;
+				DwnPortalClient.log.warn("Moodle download {} failed (attempt {}/{}): {}", uri.getPath(), i, this.retries, e.getMessage());
+				if (i < this.retries) {
+					TimeUnit.SECONDS.sleep(Math.min(15, i * 3));
+				}
+			}
+		}
+		throw last == null ? new IOException("Could not download Moodle resource") : last;
+	}
+
+	private MoodleDownload downloadMoodleResource(final URI uri, final int depth) throws IOException, InterruptedException {
+		if (depth > 4) {
+			throw new IOException("Too many Moodle resource redirects/previews");
+		}
+		final Path temp = Files.createTempFile("moodle-resource-", ".download");
+		try {
+			final HttpRequest request = this.request(uri).GET().timeout(Duration.ofSeconds(this.downloadTimeoutSeconds)).build();
+			final HttpResponse<Path> response = this.http.send(request, HttpResponse.BodyHandlers.ofFile(temp));
+			if (response.statusCode() < 200 || response.statusCode() >= 300) {
+				throw new IOException("Moodle resource returned HTTP " + response.statusCode());
+			}
+			DwnPortalClient.requireMoodleUri(response.uri());
+			if (Files.size(temp) == 0) {
+				throw new IOException("Empty Moodle resource response");
+			}
+			final long expected = response.headers().firstValueAsLong("Content-Length").orElse(-1);
+			if (expected >= 0 && expected != Files.size(temp)) {
+				throw new IOException("Incomplete Moodle resource download");
+			}
+			final String type = response.headers().firstValue("Content-Type").orElse("").toLowerCase(java.util.Locale.ROOT);
+			final String disposition = response.headers().firstValue("Content-Disposition").orElse("");
+			final String name = DwnPortalClient.filename(disposition, response.uri());
+			if (type.contains("text/html") && !disposition.toLowerCase(java.util.Locale.ROOT).contains("attachment")) {
+				if (Files.size(temp) > 5_000_000) {
+					throw new IOException("Unexpected large HTML Moodle preview");
+				}
+				final String html = Files.readString(temp, StandardCharsets.UTF_8);
+				final Document doc = Jsoup.parse(html, response.uri().toString());
+				if (DwnPortalClient.hasLoginForm(html)
+						|| doc.selectFirst("a[href*='/auth/saml2/login.php'], form[action*='/auth/saml2/login.php']") != null) {
+					throw new IOException("Moodle session expired while downloading a resource");
+				}
+				final Element file = doc.selectFirst("""
+						#region-main iframe[src*='pluginfile.php'], \
+						#region-main object[data*='pluginfile.php'], #region-main a[href*='pluginfile.php'], \
+						.resourceworkaround a[href], #region-main a[href*='/mod/resource/download.php']""");
+				if (file != null) {
+					final String href = file.hasAttr("href") ? file.attr("href")
+							: file.hasAttr("src") ? file.attr("src")
+							: file.attr("data");
+					final URI target = response.uri().resolve(href.replace("&amp;", "&"));
+					DwnPortalClient.requireMoodleUri(target);
+					try {
+						return this.downloadMoodleResource(target, depth + 1);
+					} finally {
+						Files.deleteIfExists(temp);
+					}
+				}
+				throw new IOException("Moodle resource returned HTML without a downloadable attachment: " + uri);
+			}
+			return new MoodleDownload(temp, name);
+		} catch (final IOException | InterruptedException | RuntimeException e) {
+			Files.deleteIfExists(temp);
+			throw e;
+		}
+	}
+
+	/** Obtain the external target of a Moodle URL activity without following it. */
+	public URI getMoodleExternalUrl(final URI uri) throws IOException, InterruptedException {
+		DwnPortalClient.requireMoodleUri(uri);
+		URI current = uri;
+		for (int redirects = 0; redirects < 5; redirects++) {
+			final HttpRequest request = this.request(current).GET().timeout(Duration.ofSeconds(90)).build();
+			final HttpResponse<String> response = this.noRedirectHttp.send(request,
+					HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+			if (response.statusCode() < 300 || response.statusCode() >= 400) {
+				break;
+			}
+			final String location = response.headers()
+					.firstValue("Location")
+					.orElseThrow(() -> new IOException("Moodle URL redirect has no Location"));
+			final URI target = current.resolve(location);
+			if (!"http".equalsIgnoreCase(target.getScheme()) && !"https".equalsIgnoreCase(target.getScheme())) {
+				throw new IOException("Unsupported Moodle URL redirect scheme");
+			}
+			if (!DwnPortalClient.isMoodleHost(target)) {
+				if (DwnPortalClient.isHersHost(target)) {
+					throw new IOException("Moodle URL activity redirected to HERS login instead of a course link");
+				}
+				return target;
+			}
+			current = target;
+		}
+		final Page page = this.getMoodlePage(uri);
+		final Document doc = Jsoup.parse(page.html(), page.uri().toString());
+		for (final Element anchor : doc.select("#region-main .urlworkaround a[href], #region-main div[role=main] a[href]")) {
+			final URI target = page.uri().resolve(anchor.attr("href"));
+			if (("https".equalsIgnoreCase(target.getScheme()) || "http".equalsIgnoreCase(target.getScheme())) && !target.equals(uri)) {
+				return target;
+			}
+		}
+		throw new IOException("No external target found for Moodle URL activity: " + uri);
+	}
+
+	private static String filename(final String disposition, final URI uri) {
+		final Matcher utf8 = Pattern.compile("(?i)filename\\*\\s*=\\s*(?:UTF-8'')?([^;]+)").matcher(disposition);
+		if (utf8.find()) {
+			return URLDecoder.decode(utf8.group(1).replace("\"", "").strip(), StandardCharsets.UTF_8);
+		}
+		final Matcher normal = Pattern.compile("(?i)filename\\s*=\\s*(?:\"([^\"]+)\"|([^;]+))").matcher(disposition);
+		if (normal.find()) {
+			return (normal.group(1) != null ? normal.group(1) : normal.group(2)).strip();
+		}
+		final String path = uri.getPath();
+		final String segment = path.substring(path.lastIndexOf('/') + 1);
+		return segment.isBlank() || segment.endsWith(".php") ? "resource-" + Integer.toHexString(uri.toString().hashCode()) + ".bin"
+				: URLDecoder.decode(segment, StandardCharsets.UTF_8);
+	}
+
+	private static boolean isMoodleHost(final URI uri) {
+		return "https".equalsIgnoreCase(uri.getScheme()) && "moodle.hers.be".equalsIgnoreCase(uri.getHost());
+	}
+
+	private static void requireMoodleUri(final URI uri) throws IOException {
+		if (!DwnPortalClient.isMoodleHost(uri)) {
+			throw new IOException("Refusing non-Moodle URL: " + uri);
+		}
 	}
 
 	private static boolean hasLoginForm(final String html) {

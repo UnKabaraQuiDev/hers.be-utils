@@ -46,12 +46,18 @@ pclib:
 
 dwn:
   portal:
-    index: "${DWN_PORTAL_INDEX:https://my.hers.be/FW/index.do}"
     username: ""
     password: ""
+  myhers:
+    index: ""
+    target-dir: ""
+  moodle:
+    courses-url: ""
+    target-dir: ""
   root-dir: ""
   link-dir: ""
-  target-dir: ""
   webhook-token: ""
   download-timeout-seconds: 900
   retries: 3
+  directory-retry-delay-seconds: 5
+

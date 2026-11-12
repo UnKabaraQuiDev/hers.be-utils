@@ -119,6 +119,25 @@ public class PushNotificationService {
 		}
 	}
 
+	public void sendFilesUnavailable(final String source, final String dir, final int attempts, final Exception reason) {
+		final String topic = this.filesTopic != null && !this.filesTopic.isBlank() ? this.filesTopic : this.alertTopic;
+		if (topic == null || topic.isBlank()) {
+			PushNotificationService.log.warn("No ntfy topic configured for OneDrive unavailable notification");
+			return;
+		}
+		try {
+			this.restClient.post().uri("/" + topic)
+					.header("X-Title", "HERS OneDrive unavailable (" + source + ")")
+					.header("X-Priority", "high")
+					.header("X-Tags", "warning,file_folder")
+					.body("Skipped " + source + " file refresh after " + attempts + " checks.\nPath: " + dir
+							+ "\nError: " + (reason == null ? "unknown" : reason.getMessage()))
+					.retrieve().toBodilessEntity();
+		} catch (final Exception e) {
+			PushNotificationService.log.error("Failed to send OneDrive outage notification", e);
+		}
+	}
+
 	public void sendFiles(final DownloadReport report) {
 		if (report.downloads().isEmpty() || this.filesTopic == null || this.filesTopic.isBlank()) {
 			return;

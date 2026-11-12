@@ -6,6 +6,7 @@ import lu.kbra.pclib.db.annotations.entry.Nullable;
 import lu.kbra.pclib.db.annotations.entry.PrimaryKey;
 import lu.kbra.pclib.db.annotations.entry.def.MaxLength;
 import lu.kbra.pclib.db.impl.DatabaseEntry;
+import lu.kbra.webcal_cmp.files.FileEntry;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -14,7 +15,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class FileData implements DatabaseEntry {
+public class MoodleFileData implements DatabaseEntry, FileEntry {
 
 	@Column
 	@PrimaryKey
@@ -43,13 +44,13 @@ public class FileData implements DatabaseEntry {
 	@Nullable
 	private @MaxLength(2048) String linkRelativePath;
 
-	public FileData(String remoteId, int version) {
+	public MoodleFileData(String remoteId, int version) {
 		this.remoteId = remoteId;
 		this.version = version;
 	}
 
 	@Override
-	public FileData clone() {
+	public MoodleFileData clone() {
 		return PCUtils.safeClone(super::clone);
 	}
 
