@@ -70,20 +70,17 @@ public class PushNotificationService {
 	public void sendCalendarChanged(final CalendarChanges changes) {
 		final String body = this.buildMessage(changes);
 
-		try {
-			this.restClient.post()
-					.uri("/" + this.alertTopic)
-					.header("X-Title", "Calendar changed")
-					.header("X-Priority", "high")
-					.header("X-Tags", "calendar")
-					.header("X-Markdown", "true")
-					.header("Content-Type", "text/plain; charset=utf-8")
-					.body(body)
-					.retrieve()
-					.toBodilessEntity();
-		} catch (final HttpClientErrorException v) {
-			v.printStackTrace();
-		}
+		// Let failures propagate: the caller must not advance the snapshot before ntfy accepts the message.
+		this.restClient.post()
+				.uri("/" + this.alertTopic)
+				.header("X-Title", "Calendar changed")
+				.header("X-Priority", "high")
+				.header("X-Tags", "calendar")
+				.header("X-Markdown", "true")
+				.header("Content-Type", "text/plain; charset=utf-8")
+				.body(body)
+				.retrieve()
+				.toBodilessEntity();
 	}
 
 	public void sendMenu(final LocalDate date, final List<MenuData> menus) {
@@ -126,13 +123,15 @@ public class PushNotificationService {
 			return;
 		}
 		try {
-			this.restClient.post().uri("/" + topic)
+			this.restClient.post()
+					.uri("/" + topic)
 					.header("X-Title", "HERS OneDrive unavailable (" + source + ")")
 					.header("X-Priority", "high")
 					.header("X-Tags", "warning,file_folder")
-					.body("Skipped " + source + " file refresh after " + attempts + " checks.\nPath: " + dir
-							+ "\nError: " + (reason == null ? "unknown" : reason.getMessage()))
-					.retrieve().toBodilessEntity();
+					.body("Skipped " + source + " file refresh after " + attempts + " checks.\nPath: " + dir + "\nError: "
+							+ (reason == null ? "unknown" : reason.getMessage()))
+					.retrieve()
+					.toBodilessEntity();
 		} catch (final Exception e) {
 			PushNotificationService.log.error("Failed to send OneDrive outage notification", e);
 		}
@@ -260,45 +259,37 @@ public class PushNotificationService {
 		return message.toString().stripTrailing();
 	}
 
-	private String formatModifiedEvent(final CalendarEventChange change) {
+	String formatModifiedEvent(final CalendarEventChange change) {
 		final CalendarEvent oldEvent = change.oldEvent();
 		final CalendarEvent newEvent = change.newEvent();
-
 		final StringBuilder message = new StringBuilder();
-
-		message.append(newEvent.summary()).append("\n");
-
-		message.append("Date: ").append(this.formatDate(newEvent.start())).append("\n");
-
-		if (!oldEvent.start().equals(newEvent.start())) {
-			message.append("Start ")
-					.append(this.formatDateTime(oldEvent.start()))
-					.append(" -> **")
-					.append(this.formatDateTime(newEvent.start()))
-					.append("**\n");
+		if (!Objects.equals(oldEvent.summary(), newEvent.summary())) {
+			message.append(oldEvent.summary()).append(" -> **").append(newEvent.summary()).append("**\n");
 		} else {
-			message.append("Time: ").append(this.formatDateTime(newEvent.start())).append("\n");
+			message.append(newEvent.summary()).append("\n");
 		}
-
-		if (!Objects.equals(oldEvent.end(), newEvent.end())) {
-			message.append("End ")
-					.append(this.formatDateTime(oldEvent.end()))
-					.append(" -> **")
-					.append(this.formatDateTime(newEvent.end()))
-					.append("**\n");
-		} else {
-			message.append("Time: ").append(this.formatDateTime(newEvent.end())).append("\n");
+		final String oldDate = this.formatDate(oldEvent.start());
+		final String newDate = this.formatDate(newEvent.start());
+		message.append("Date: ").append(oldDate);
+		if (!oldDate.equals(newDate)) {
+			message.append(" -> **").append(newDate).append("**");
 		}
-
+		message.append("\n");
+		final String oldTime = this.formatRange(oldEvent);
+		final String newTime = this.formatRange(newEvent);
+		message.append("Time: ").append(oldTime);
+		if (!oldTime.equals(newTime)) {
+			message.append(" -> **").append(newTime).append("**");
+		}
+		message.append("\nLocation: ").append(this.valueOrEmpty(oldEvent.location()));
 		if (!Objects.equals(oldEvent.location(), newEvent.location())) {
-			message.append("Location ")
-					.append(this.valueOrEmpty(oldEvent.location()))
-					.append(" -> **")
-					.append(this.valueOrEmpty(newEvent.location()))
-					.append("**\n");
+			message.append(" -> **").append(this.valueOrEmpty(newEvent.location())).append("**");
 		}
-
 		return message.toString().stripTrailing();
+	}
+
+	private String formatRange(final CalendarEvent event) {
+		return this.formatDateTime(event.start()) + (event.end() == null ? "" : " - " + this.formatDateTime(event.end()));
 	}
 
 	private String valueOrEmpty(final String value) {

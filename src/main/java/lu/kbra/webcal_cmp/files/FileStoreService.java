@@ -192,11 +192,10 @@ public class FileStoreService {
 				remoteHash);
 	}
 
-
 	/**
-	 * Repairs the latest backed file on a rescan when the server content is
-	 * unchanged. Historical versions and locally changed files are left alone.
-	 * A database update failure rolls the move back, and collisions never overwrite.
+	 * Repairs the latest backed file on a rescan when the server content is unchanged. Historical
+	 * versions and locally changed files are left alone. A database update failure rolls the move back,
+	 * and collisions never overwrite.
 	 */
 	private void renameUnchangedFile(
 			final FileSource source,
@@ -205,11 +204,11 @@ public class FileStoreService {
 			final String course,
 			final String name,
 			final String hash,
-			final DownloadReport report) throws IOException {
+			final DownloadReport report)
+			throws IOException {
 		final Path back = this.back(source);
 		final Path previous = this.existingPath(source, entry);
-		if (!Files.isRegularFile(previous, LinkOption.NOFOLLOW_LINKS)
-				|| !hash.equals(FileStoreService.sha256(previous))) {
+		if (!Files.isRegularFile(previous, LinkOption.NOFOLLOW_LINKS) || !hash.equals(FileStoreService.sha256(previous))) {
 			return;
 		}
 		// Keep the historical folder structure, but normalize every segment.
@@ -223,8 +222,7 @@ public class FileStoreService {
 		if (!desired.startsWith(back) || desired.equals(back)) {
 			throw new IOException("Unsafe normalized backing file path: " + desired);
 		}
-		if (previous.equals(desired) && Objects.equals(entry.getOriginalName(), name)
-				&& Objects.equals(entry.getCourseCode(), course)) {
+		if (previous.equals(desired) && Objects.equals(entry.getOriginalName(), name) && Objects.equals(entry.getCourseCode(), course)) {
 			return;
 		}
 
@@ -238,8 +236,7 @@ public class FileStoreService {
 			this.safeCreateDirectories(desired.getParent());
 			// Never overwrite another resource's bytes or a historical version.
 			final List<FileData> reserved = new ArrayList<>(this.courseHistory(source, previousCourse));
-			reserved.removeIf(row -> Objects.equals(row.getRemoteId(), entry.getRemoteId())
-					&& row.getVersion() == entry.getVersion());
+			reserved.removeIf(row -> Objects.equals(row.getRemoteId(), entry.getRemoteId()) && row.getVersion() == entry.getVersion());
 			destination = FileStoreService.availablePath(back, desired, reserved);
 			// A normal move refuses collisions; do not use REPLACE_EXISTING.
 			Files.move(previous, destination);
@@ -265,8 +262,7 @@ public class FileStoreService {
 		}
 		if (moved && previousLink != null && !previousLink.isBlank()) {
 			final Path oldLink = this.root.resolve(previousLink).normalize();
-			if (oldLink.startsWith(this.root) && !oldLink.equals(this.root)
-					&& FileStoreService.linkPointsTo(oldLink, previous)) {
+			if (oldLink.startsWith(this.root) && !oldLink.equals(this.root) && FileStoreService.linkPointsTo(oldLink, previous)) {
 				try {
 					Files.delete(oldLink); // Own symlink only; never delete a real file.
 				} catch (final IOException e) {
@@ -328,11 +324,11 @@ public class FileStoreService {
 	}
 
 	private void insert(final FileSource source, final FileData entry) {
-		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).loadIfExistsElseInsert((FileData) entry);
+		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).loadIfExistsElseInsert(entry);
 	}
 
 	private void update(final FileSource source, final FileData entry) {
-		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).update((FileData) entry);
+		(source == FileSource.MY_HERS ? this.myHersTable : this.moodleTable).update(entry);
 	}
 
 	private Path existingPath(final FileSource source, final FileData entry) throws IOException {
@@ -591,7 +587,11 @@ public class FileStoreService {
 		if (raw == null) {
 			return fallback;
 		}
-		final String name = FileNameNormalizer.normalize(raw).replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_").replaceAll("^\\.+", "_").replaceAll("[. ]+$", "").strip();
+		final String name = FileNameNormalizer.normalize(raw)
+				.replaceAll("[\\p{Cntrl}\\\\/:*?\"<>|]", "_")
+				.replaceAll("^\\.+", "_")
+				.replaceAll("[. ]+$", "")
+				.strip();
 		return name.isBlank() || name.matches("[._-]+") ? fallback
 				: name.length() > 200 ? name.substring(0, 200)
 				: name;

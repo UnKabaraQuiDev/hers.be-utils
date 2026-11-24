@@ -27,7 +27,9 @@ ntfy:
 menu:
   facebook: ""
   title: "MENU DE LA SEMAINE"
-  cookies: ""
+  username: ""
+  password: ""
+  session-path: "${MENU_SESSION_PATH:./facebook-state/session.json}"
   ocr:
     executable: "tesseract"
     language: "fra"

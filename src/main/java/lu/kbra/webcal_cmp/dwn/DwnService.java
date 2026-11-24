@@ -9,14 +9,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
-import lombok.extern.slf4j.Slf4j;
 import lu.kbra.webcal_cmp.data.DownloadReport;
 import lu.kbra.webcal_cmp.data.FileSource;
 import lu.kbra.webcal_cmp.dwn.PortalHtmlParser.Asset;
 import lu.kbra.webcal_cmp.dwn.PortalHtmlParser.Course;
 import lu.kbra.webcal_cmp.dwn.PortalHtmlParser.Resource;
-import lu.kbra.webcal_cmp.service.PushNotificationService;
 import lu.kbra.webcal_cmp.files.FileStoreService;
+import lu.kbra.webcal_cmp.service.PushNotificationService;
+
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Profile("files-hers")
@@ -29,8 +30,7 @@ public class DwnService {
 	private final AtomicBoolean running = new AtomicBoolean();
 	private volatile DownloadReport lastReport;
 
-	public DwnService(final DwnPortalClient client, final FileStoreService store,
-			final PushNotificationService notifications) {
+	public DwnService(final DwnPortalClient client, final FileStoreService store, final PushNotificationService notifications) {
 		this.client = client;
 		this.store = store;
 		this.notifications = notifications;

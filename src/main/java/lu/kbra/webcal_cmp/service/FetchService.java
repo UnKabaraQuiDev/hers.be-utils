@@ -1,6 +1,7 @@
 package lu.kbra.webcal_cmp.service;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CachePut;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -19,9 +20,18 @@ public class FetchService {
 		this.restClient = builder.build();
 	}
 
-	@Cacheable("calendars")
+	@Cacheable(value = "calendars", key = "'source'")
 	public String downloadCalendar() {
-		return this.restClient.get().uri(this.url).retrieve().body(String.class);
+		return this.fetch();
+	}
+
+	@CachePut(value = "calendars", key = "'source'")
+	public String downloadFreshCalendar() {
+		return this.fetch();
+	}
+
+	private String fetch() {
+		return this.restClient.get().uri(this.url).header("Cache-Control", "no-cache").retrieve().body(String.class);
 	}
 
 }

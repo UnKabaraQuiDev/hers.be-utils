@@ -9,14 +9,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Resolves download filenames without relying on a server's often misencoded
- * Content-Disposition filename=. URLs are decoded once, not through URI.getPath
- * and then URLDecoder (which would double-decode %25 and turn '+' into space).
+ * Resolves download filenames without relying on a server's often misencoded Content-Disposition
+ * filename=. URLs are decoded once, not through URI.getPath and then URLDecoder (which would
+ * double-decode %25 and turn '+' into space).
  */
 public final class DownloadFileName {
 
-	private static final Pattern PARAMETER = Pattern.compile(
-			"(?i)(?:^|;)\\s*(filename\\*|filename)\\s*=\\s*(?:\"((?:\\\\.|[^\"])*)\"|([^;]*))");
+	private static final Pattern PARAMETER = Pattern
+			.compile("(?i)(?:^|;)\\s*(filename\\*|filename)\\s*=\\s*(?:\"((?:\\\\.|[^\"])*)\"|([^;]*))");
 	private static final Pattern EXTENSION = Pattern.compile("(?i).+\\.[a-z0-9]{1,12}$");
 	private static final Pattern OPAQUE_NAME = Pattern.compile("(?i)(?:[a-f0-9]{24,}|[a-f0-9-]{36})\\.[a-z0-9]{1,12}");
 
@@ -27,13 +27,13 @@ public final class DownloadFileName {
 		final String raw = disposition == null ? "" : disposition;
 		String extended = null;
 		String plain = null;
-		final Matcher matcher = PARAMETER.matcher(raw);
+		final Matcher matcher = DownloadFileName.PARAMETER.matcher(raw);
 		while (matcher.find()) {
 			final String parameter = matcher.group(1);
 			final String value = matcher.group(2) == null ? matcher.group(3).strip() : matcher.group(2).replace("\\\"", "\"");
 			if (parameter.endsWith("*")) {
 				if (extended == null) {
-					extended = decodeExtended(value);
+					extended = DownloadFileName.decodeExtended(value);
 				}
 			} else if (plain == null) {
 				plain = value;
@@ -42,24 +42,24 @@ public final class DownloadFileName {
 
 		// RFC 6266: filename* takes precedence over filename= when valid.
 		if (extended != null && !extended.isBlank()) {
-			return normalizedWithExtension(extended, contentType);
+			return DownloadFileName.normalizedWithExtension(extended, contentType);
 		}
-		final String urlName = urlFileName(uri);
+		final String urlName = DownloadFileName.urlFileName(uri);
 		final String headerName = FileNameNormalizer.normalize(plain);
 		// Moodle frequently sends "pÃ©dagogiques.pdf" in filename= while its
 		// pluginfile URL contains the correctly UTF-8-encoded original name.
 		// Do not prefer opaque/hash URL basenames over a descriptive header.
-		if (urlName != null && EXTENSION.matcher(urlName).matches()
-				&& !OPAQUE_NAME.matcher(urlName).matches()) {
-			return normalizedWithExtension(urlName, contentType);
+		if (urlName != null && DownloadFileName.EXTENSION.matcher(urlName).matches()
+				&& !DownloadFileName.OPAQUE_NAME.matcher(urlName).matches()) {
+			return DownloadFileName.normalizedWithExtension(urlName, contentType);
 		}
 		if (headerName != null && !headerName.isBlank()) {
-			return normalizedWithExtension(headerName, contentType);
+			return DownloadFileName.normalizedWithExtension(headerName, contentType);
 		}
 		if (urlName != null && !urlName.isBlank()) {
-			return normalizedWithExtension(urlName, contentType);
+			return DownloadFileName.normalizedWithExtension(urlName, contentType);
 		}
-		return prefix + "-" + Integer.toHexString(uri.toString().hashCode()) + extension(contentType);
+		return prefix + "-" + Integer.toHexString(uri.toString().hashCode()) + DownloadFileName.extension(contentType);
 	}
 
 	static String urlFileName(final URI uri) {
@@ -105,7 +105,7 @@ public final class DownloadFileName {
 
 	private static String normalizedWithExtension(final String name, final String contentType) {
 		final String normalized = FileNameNormalizer.normalize(name);
-		return EXTENSION.matcher(normalized).matches() ? normalized : normalized + extension(contentType);
+		return DownloadFileName.EXTENSION.matcher(normalized).matches() ? normalized : normalized + DownloadFileName.extension(contentType);
 	}
 
 	private static String extension(final String contentType) {

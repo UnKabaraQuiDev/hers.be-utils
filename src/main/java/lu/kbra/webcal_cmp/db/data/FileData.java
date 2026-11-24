@@ -43,7 +43,7 @@ public class FileData implements DatabaseEntry {
 	@Nullable
 	private @MaxLength(2048) String linkRelativePath;
 
-	public FileData(String remoteId, int version) {
+	public FileData(final String remoteId, final int version) {
 		this.remoteId = remoteId;
 		this.version = version;
 	}

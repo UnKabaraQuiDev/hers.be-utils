@@ -38,7 +38,7 @@ public class DwnEndpoint {
 		if (!this.authorized(authorization, headerToken, key)) {
 			return ResponseEntity.status(401).build();
 		}
-		if (!this.files.triggerAsync() | !moodle.triggerAsync()) {
+		if (!this.files.triggerAsync() | !this.moodle.triggerAsync()) {
 			return ResponseEntity.status(409).body(Map.of("status", "already-running"));
 		}
 		return ResponseEntity.accepted().body(Map.of("status", "started"));

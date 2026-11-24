@@ -32,7 +32,7 @@ jobs:
           proxy_username: ${{ secrets.PROXY_USER }} 
           proxy_key: ${{ secrets.PROXY_SSH_KEY }}
           
-          envs: ACTIVE_PROFILES_OVERRIDE
+          envs: ACTIVE_PROFILES_OVERRIDE,MENU_USERNAME,MENU_PASSWORD
           script: |
             set -e
 
@@ -61,7 +61,8 @@ jobs:
             export CONTAINER_PORT="${{ vars.BACKEND_CONTAINER_PORT }}"
             export CALENDAR_URL="${{ vars.CALENDAR_URL }}"
             export MENU_FACEBOOK="${{ vars.MENU_FACEBOOK }}"
-            export MENU_COOKIES="${{ secrets.MENU_COOKIES }}"
+            export MENU_USERNAME="${{ secrets.MENU_USERNAME }}"
+            export MENU_PASSWORD="${{ secrets.MENU_PASSWORD }}"
             export NTFY_ALERT="${{ vars.NTFY_ALERT }}"
             export NTFY_MENU="${{ vars.NTFY_MENU }}"
             export NTFY_FILES="${{ vars.NTFY_FILES }}"

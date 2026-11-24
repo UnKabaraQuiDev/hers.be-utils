@@ -16,7 +16,7 @@ public class CacheConfig {
 
 	@Bean
 	CacheManager cacheManager() {
-		final CaffeineCacheManager manager = new CaffeineCacheManager("calendars", "parsedCal", "transformed");
+		final CaffeineCacheManager manager = new CaffeineCacheManager("calendars");
 		manager.setCaffeine(Caffeine.newBuilder().expireAfterWrite(Duration.ofMinutes(2)).maximumSize(1000));
 		return manager;
 	}

@@ -67,3 +67,6 @@ Thumbs.db
 downloads/
 onedrive/
 onedriver/
+
+# Playwright Facebook session (contains authentication tokens)
+facebook-state/

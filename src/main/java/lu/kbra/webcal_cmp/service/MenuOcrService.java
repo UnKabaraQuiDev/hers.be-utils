@@ -4,7 +4,6 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,11 +55,7 @@ public class MenuOcrService {
 			return Optional.empty();
 		}
 		final BufferedImage image = ImageIO.read(new ByteArrayInputStream(bytes));
-		if (image == null || image.getWidth() < 600 || image.getHeight() < 350) {
-			return Optional.empty();
-		}
-
-		if (!this.matchesDateRange(image, monday)) {
+		if (image == null || image.getWidth() < 600 || image.getHeight() < 350 || !this.matchesDateRange(image, monday)) {
 			return Optional.empty();
 		}
 
@@ -123,7 +118,7 @@ public class MenuOcrService {
 		final String lastDay = "%02d".formatted(friday.getDayOfMonth());
 		final String startMonth = "%02d".formatted(monday.getMonthValue());
 		final String endMonth = "%02d".formatted(friday.getMonthValue());
-		return normalized.contains(firstDay) && normalized.contains(lastDay)
+		return (normalized.contains(firstDay) || normalized.contains(lastDay))
 				&& (normalized.contains("/" + startMonth) || normalized.contains("/" + endMonth));
 	}
 

@@ -22,7 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	
 RUN mvn exec:java -e -D exec.mainClass=com.microsoft.playwright.CLI -D exec.args="install-deps" || true
 
-RUN useradd --create-home --shell /bin/bash webcal
+RUN useradd --create-home --shell /bin/bash webcal \
+    && install -d -m 0700 -o webcal -g webcal /home/webcal/facebook-state
 
 WORKDIR /opt/hers.be-utils
 

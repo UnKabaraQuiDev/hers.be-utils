@@ -2,15 +2,20 @@ package lu.kbra.webcal_cmp.service;
 
 import java.io.IOException;
 import java.net.URI;
-import java.time.Instant;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.DateTimeParseException;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
@@ -20,14 +25,13 @@ import com.microsoft.playwright.APIResponse;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
-import com.microsoft.playwright.options.Cookie;
+import com.microsoft.playwright.options.AriaRole;
 import com.microsoft.playwright.options.WaitUntilState;
 
-import lu.kbra.pclib.datastructure.tuple.ReadOnlyPair;
-import lu.kbra.pclib.datastructure.tuple.Tuples;
 import lu.kbra.webcal_cmp.db.data.MenuData;
 
 import lombok.RequiredArgsConstructor;
@@ -48,87 +52,206 @@ public class FacebookMenuSource {
 	@Value("${menu.facebook}")
 	private String facebookUrl;
 
-	@Value("${menu.cookies:}")
-	private String cookies;
+	@Value("${menu.username:}")
+	private String username;
 
-	public Optional<List<MenuData>> findWeek(final LocalDate monday) throws IOException, InterruptedException {
+	@Value("${menu.password:}")
+	private String password;
+
+	@Value("${menu.session-path:./facebook-state/session.json}")
+	private String sessionPath;
+
+	public synchronized Optional<List<MenuData>> findWeek(final LocalDate monday) throws IOException, InterruptedException {
 		if (this.facebookUrl.isBlank()) {
-			FacebookMenuSource.log.debug("Menu Facebook source is not configured");
 			return Optional.empty();
 		}
-		final LocalDate earliest = monday.minusDays(3);
-		final Set<String> seen = new HashSet<>();
+		final Path state = Path.of(this.sessionPath).toAbsolutePath();
 		try (Playwright playwright = Playwright.create();
 				Browser browser = playwright.chromium()
 						.launch(new BrowserType.LaunchOptions().setHeadless(true)
 								.setArgs(List.of("--disable-dev-shm-usage", "--no-sandbox")))) {
-			try (BrowserContext context = browser
-					.newContext(new Browser.NewContextOptions().setLocale("fr-BE").setViewportSize(1280, 900))) {
-				this.installCookies(context);
-				final Page page = context.newPage();
-				page.navigate(this.facebookUrl,
-						new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(30_000));
-				page.waitForTimeout(1400);
-				for (int scroll = 0; scroll <= FacebookMenuSource.MAX_SCROLLS && seen.size() < FacebookMenuSource.MAX_IMAGES; scroll++) {
-					boolean encounteredOlder = false;
-					for (final ImageRef photo : this.readImages(page)) {
-						if (!seen.add(photo.url()) || seen.size() > FacebookMenuSource.MAX_IMAGES
-								|| !FacebookMenuSource.allowedImageUrl(photo.url())) {
-							continue;
-						}
-						try {
-							final APIResponse response = context.request().get(photo.url());
-							try {
-								if (response.ok()) {
-									final Optional<List<MenuData>> week = this.ocr.extract(response.body(), monday);
-									if (week.isPresent()) {
-										FacebookMenuSource.log.info("Found menu for week {} in Facebook photo", monday);
-										return week;
-									}
-								}
-							} finally {
-								response.dispose();
-							}
-						} catch (PlaywrightException | IOException ex) {
-							FacebookMenuSource.log.debug("Unable to read Facebook photo", ex);
-						}
+			BrowserContext initial;
+			try {
+				initial = browser.newContext(this.contextOptions(state));
+			} catch (final PlaywrightException ex) {
+				if (!Files.isRegularFile(state)) {
+					throw ex;
+				}
+				FacebookMenuSource.log.warn("Unable to restore Facebook session; starting with a clean context");
+				initial = browser.newContext(this.contextOptions(null));
+			}
+			try (BrowserContext context = initial) {
+				final ScanResult result = this.scan(context, monday);
+				if (result.usable()) {
+					if (FacebookMenuSource.authenticated(context)) {
+						this.saveSession(context, state);
 					}
-					if (encounteredOlder) {
-						break; // Do not go back past the preceding Friday.
-					}
-					page.evaluate("window.scrollBy(0, Math.max(window.innerHeight, 850))");
-					page.waitForTimeout(1200);
+					return result.week();
 				}
-				final String visible = page.locator("body").innerText().toLowerCase();
-				if (visible.contains("temporarily blocked") || visible.contains("temporairement bloqu")
-						|| visible.contains("you must log in") || visible.contains("vous devez vous connecter")) {
-					throw new IOException("Facebook returned a login/block page. Set MENU_COOKIES from an authorized session.");
+			}
+
+			if (this.username.isBlank() || this.password.isBlank()) {
+				throw new IOException("Facebook feed inaccessible; configure menu.username and menu.password");
+			}
+			FacebookMenuSource.log.info("Facebook feed inaccessible; attempting one login and retry");
+			try (BrowserContext context = browser.newContext(this.contextOptions(null))) {
+				this.login(context);
+				this.saveSession(context, state);
+				final ScanResult result = this.scan(context, monday);
+				if (!result.usable()) {
+					throw new IOException("Facebook feed remains inaccessible after login; existing menu cache is unchanged");
 				}
-				if (seen.isEmpty()) {
-					throw new IOException("Facebook did not expose any accessible feed images (possible login/block page)");
+				if (FacebookMenuSource.authenticated(context)) {
+					this.saveSession(context, state);
 				}
-				return Optional.empty();
+				return result.week();
 			}
 		} catch (final PlaywrightException ex) {
-			throw new IOException("Facebook browser failed (cookies, login wall, or Chromium installation)", ex);
+			throw new IOException("Facebook browser failed (navigation or Chromium installation)", ex);
 		}
 	}
 
-	private void installCookies(final BrowserContext context) {
-		if (this.cookies == null || this.cookies.isBlank()) {
-			return;
+	private Browser.NewContextOptions contextOptions(final Path state) {
+		final Browser.NewContextOptions options = new Browser.NewContextOptions().setLocale("fr-BE").setViewportSize(1280, 900);
+		if (state != null && Files.isRegularFile(state)) {
+			options.setStorageStatePath(state);
 		}
-		for (final String pair : this.cookies.split(";")) {
-			final int equals = pair.indexOf('=');
-			if (equals <= 0) {
-				continue;
+		return options;
+	}
+
+	private void login(final BrowserContext context) throws IOException {
+		final Page page = context.newPage();
+		try {
+			page.navigate("https://www.facebook.com/login/",
+					new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(30_000));
+			this.dismissConsent(page);
+			final URI uri = URI.create(page.url());
+			if (!"https".equals(uri.getScheme()) || !"www.facebook.com".equalsIgnoreCase(uri.getHost())) {
+				throw new IOException("Facebook login redirected outside the expected login host");
 			}
-			final String name = pair.substring(0, equals).trim();
-			final String value = pair.substring(equals + 1).trim();
-			if (!name.isBlank()) {
-				context.addCookies(List.of(new Cookie(name, value).setDomain(".facebook.com").setPath("/").setSecure(true)));
+			page.locator("input[name=email], #email").first().fill(this.username, new Locator.FillOptions().setTimeout(15_000));
+			page.locator("input[name=pass], #pass").first().fill(this.password, new Locator.FillOptions().setTimeout(15_000));
+			page.locator("button[name=login], input[name=login], #loginbutton, button[type=submit]").first().click();
+			for (int i = 0; i < 30; i++) {
+				if (FacebookMenuSource.challenge(page)) {
+					throw new IOException("Facebook requires a checkpoint, CAPTCHA or two-factor authentication; manual action required");
+				}
+				if (FacebookMenuSource.authenticated(context) && !FacebookMenuSource.loginWall(page)) {
+					FacebookMenuSource.log.info("Facebook login succeeded");
+					return;
+				}
+				page.waitForTimeout(1000);
 			}
+			throw new IOException("Facebook login not confirmed; check credentials or account restrictions");
+		} catch (PlaywrightException | IllegalArgumentException ex) {
+			// Playwright action traces can contain the values passed to fill().
+			throw new IOException("Facebook login could not complete; check credentials, consent or account restrictions");
+		} finally {
+			page.close();
 		}
+	}
+
+	private static boolean authenticated(final BrowserContext context) {
+		final var cookies = context.cookies("https://www.facebook.com/");
+		return cookies.stream().anyMatch(c -> "c_user".equals(c.name) && !c.value.isBlank())
+				&& cookies.stream().anyMatch(c -> "xs".equals(c.name) && !c.value.isBlank());
+	}
+
+	private void saveSession(final BrowserContext context, final Path state) throws IOException {
+		Files.createDirectories(state.getParent());
+		final Path temporary = Files.createTempFile(state.getParent(),
+				".facebook-",
+				".json",
+				PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+		try {
+			Files.writeString(temporary, context.storageState());
+			try {
+				Files.move(temporary, state, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+			} catch (final AtomicMoveNotSupportedException ex) {
+				Files.move(temporary, state, StandardCopyOption.REPLACE_EXISTING);
+			}
+		} finally {
+			Files.deleteIfExists(temporary);
+		}
+	}
+
+	private void dismissConsent(final Page page) {
+		final Locator reject = page.getByRole(AriaRole.BUTTON,
+				new Page.GetByRoleOptions().setName(Pattern.compile(
+						"(?i)decline optional cookies|only allow essential cookies|refuser les cookies facultatifs|autoriser uniquement les cookies essentiels")))
+				.first();
+		try {
+			if (reject.isVisible()) {
+				reject.click(new Locator.ClickOptions().setTimeout(3000));
+			}
+		} catch (final PlaywrightException ignored) {
+			// Some Facebook variants do not show a consent dialog.
+		}
+	}
+
+	private static boolean challenge(final Page page) {
+		final String url = page.url().toLowerCase(Locale.ROOT);
+		return url.contains("/checkpoint") || url.contains("/two_step_verification") || url.contains("/captcha");
+	}
+
+	private static boolean loginWall(final Page page) {
+		final String url = page.url().toLowerCase(Locale.ROOT);
+		final String visible = page.locator("body").innerText().toLowerCase(Locale.ROOT);
+		return FacebookMenuSource.challenge(page) || url.contains("/login") || visible.contains("temporarily blocked")
+				|| visible.contains("temporairement bloqu") || visible.contains("you must log in")
+				|| visible.contains("vous devez vous connecter");
+	}
+
+	private ScanResult scan(final BrowserContext context, final LocalDate monday) throws IOException, InterruptedException {
+		final Set<String> seen = new HashSet<>();
+		int accessible = 0;
+		final Page page = context.newPage();
+		try {
+			page.navigate(this.facebookUrl, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(30_000));
+			page.waitForTimeout(1400);
+			this.dismissConsent(page);
+			for (int scroll = 0; scroll <= FacebookMenuSource.MAX_SCROLLS && seen.size() < FacebookMenuSource.MAX_IMAGES; scroll++) {
+				if (FacebookMenuSource.loginWall(page)) {
+					return new ScanResult(false, Optional.empty());
+				}
+				for (final ImageRef photo : this.readImages(page)) {
+					if (!FacebookMenuSource.allowedImageUrl(photo.url()) || seen.size() >= FacebookMenuSource.MAX_IMAGES
+							|| !seen.add(photo.url())) {
+						continue;
+					}
+					try {
+						final APIResponse response = context.request().get(photo.url());
+						try {
+							if (response.ok()) {
+								final byte[] body = response.body();
+								final String contentType = response.headers().getOrDefault("content-type", "");
+								if (!contentType.startsWith("image/") || body.length == 0) {
+									continue;
+								}
+								accessible++;
+								final Optional<List<MenuData>> week = this.ocr.extract(body, monday);
+								if (week.isPresent()) {
+									FacebookMenuSource.log.info("Found menu for week {} in Facebook photo", monday);
+									return new ScanResult(true, week);
+								}
+							}
+						} finally {
+							response.dispose();
+						}
+					} catch (PlaywrightException | IOException ex) {
+						FacebookMenuSource.log.debug("Unable to read Facebook photo");
+					}
+				}
+				page.evaluate("window.scrollBy(0, Math.max(window.innerHeight, 850))");
+				page.waitForTimeout(1200);
+			}
+			return new ScanResult(accessible > 0 && !FacebookMenuSource.loginWall(page), Optional.empty());
+		} finally {
+			page.close();
+		}
+	}
+
+	private record ScanResult(boolean usable, Optional<List<MenuData>> week) {
 	}
 
 	private static boolean allowedImageUrl(final String url) {

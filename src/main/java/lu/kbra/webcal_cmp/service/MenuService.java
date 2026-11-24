@@ -11,7 +11,6 @@ import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
-import lu.kbra.pclib.datastructure.tuple.ReadOnlyPair;
 import lu.kbra.webcal_cmp.data.MealType;
 import lu.kbra.webcal_cmp.db.data.MenuData;
 import lu.kbra.webcal_cmp.db.table.MenuTable;

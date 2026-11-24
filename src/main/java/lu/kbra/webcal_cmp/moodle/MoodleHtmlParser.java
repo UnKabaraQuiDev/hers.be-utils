@@ -12,10 +12,12 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
-import lu.kbra.webcal_cmp.files.FileStoreService;
 import lu.kbra.webcal_cmp.files.FileNameNormalizer;
+import lu.kbra.webcal_cmp.files.FileStoreService;
 
-/** Parses server-rendered Moodle course cards and activity lists, not navigation/sidebar duplicates. */
+/**
+ * Parses server-rendered Moodle course cards and activity lists, not navigation/sidebar duplicates.
+ */
 public final class MoodleHtmlParser {
 
 	private static final Pattern COURSE_CODE = Pattern.compile("\\[([A-Za-z0-9]+-[0-9]+)\\]");
@@ -25,7 +27,8 @@ public final class MoodleHtmlParser {
 	}
 
 	public enum Type {
-		FILE, URL
+		FILE,
+		URL
 	}
 
 	public record Activity(String id, String title, String section, Type type, URI uri) {
@@ -48,24 +51,30 @@ public final class MoodleHtmlParser {
 			}
 			String title = titleLink.text().strip();
 			if (title.isBlank()) {
-					final Element explicitTitle = card.selectFirst(".coursename, .course-card-title, .multiline");
-					title = explicitTitle == null ? "Course " + id : explicitTitle.text().strip();
+				final Element explicitTitle = card.selectFirst(".coursename, .course-card-title, .multiline");
+				title = explicitTitle == null ? "Course " + id : explicitTitle.text().strip();
 			}
-			final Matcher code = COURSE_CODE.matcher(title);
-			found.putIfAbsent(id, new Course(id, code.find() ? code.group(1) : "course-" + id,
-					FileNameNormalizer.normalize(title), base.resolve(titleLink.attr("href"))));
+			final Matcher code = MoodleHtmlParser.COURSE_CODE.matcher(title);
+			found.putIfAbsent(id,
+					new Course(id,
+							code.find() ? code.group(1) : "course-" + id,
+							FileNameNormalizer.normalize(title),
+							base.resolve(titleLink.attr("href"))));
 		}
 		// Some themes render enrolled course lists without cards.
 		if (found.isEmpty()) {
 			for (final Element anchor : document.select("#region-main a[href*='/course/view.php?id=']")) {
-				final String id = getId(anchor.attr("href"));
+				final String id = MoodleHtmlParser.getId(anchor.attr("href"));
 				if (id == null || anchor.text().isBlank()) {
 					continue;
 				}
 				final String title = anchor.text().strip();
-				final Matcher code = COURSE_CODE.matcher(title);
-				found.putIfAbsent(id, new Course(id, code.find() ? code.group(1) : "course-" + id,
-						FileNameNormalizer.normalize(title), base.resolve(anchor.attr("href"))));
+				final Matcher code = MoodleHtmlParser.COURSE_CODE.matcher(title);
+				found.putIfAbsent(id,
+						new Course(id,
+								code.find() ? code.group(1) : "course-" + id,
+								FileNameNormalizer.normalize(title),
+								base.resolve(anchor.attr("href"))));
 			}
 		}
 		return List.copyOf(found.values());
@@ -80,8 +89,8 @@ public final class MoodleHtmlParser {
 				continue; // Exclude the course-index drawer and translated navigation links.
 			}
 			final Type type = activity.hasClass("modtype_resource") ? Type.FILE : Type.URL;
-			final Element link = activity.selectFirst(type == Type.FILE
-					? "a[href*='/mod/resource/view.php?id=']" : "a[href*='/mod/url/view.php?id=']");
+			final Element link = activity
+					.selectFirst(type == Type.FILE ? "a[href*='/mod/resource/view.php?id=']" : "a[href*='/mod/url/view.php?id=']");
 			if (link == null) {
 				continue;
 			}
@@ -90,23 +99,28 @@ public final class MoodleHtmlParser {
 				continue;
 			}
 			final Element card = activity.selectFirst("[data-activityname]");
-			final String title = card == null || card.attr("data-activityname").isBlank()
-					? link.text().strip() : card.attr("data-activityname").strip();
+			final String title = card == null || card.attr("data-activityname").isBlank() ? link.text().strip()
+					: card.attr("data-activityname").strip();
 			final List<String> sections = new ArrayList<>();
-			for (Element current = section; current != null; current = current.parent() == null ? null : current.parent().closest("li.section")) {
+			for (Element current = section; current != null; current = current.parent() == null ? null
+					: current.parent().closest("li.section")) {
 				final String name = current.attr("data-sectionname").strip();
-				if (!name.isBlank() && !name.equalsIgnoreCase("Généralités")) {
+				if (!name.isBlank() && !"Généralités".equalsIgnoreCase(name)) {
 					sections.add(0, FileStoreService.safePart(name, "section"));
 				}
 			}
-			found.putIfAbsent(type.name() + ':' + id, new Activity(id, FileNameNormalizer.normalize(title),
-					String.join("/", sections), type, base.resolve(link.attr("href"))));
+			found.putIfAbsent(type.name() + ':' + id,
+					new Activity(id,
+							FileNameNormalizer.normalize(title),
+							String.join("/", sections),
+							type,
+							base.resolve(link.attr("href"))));
 		}
 		return List.copyOf(found.values());
 	}
 
 	private static String getId(final String url) {
-		final Matcher match = ID.matcher(url);
+		final Matcher match = MoodleHtmlParser.ID.matcher(url);
 		return match.find() ? match.group(1) : null;
 	}
 }

@@ -2,7 +2,6 @@ package lu.kbra.webcal_cmp.moodle;
 
 import java.io.IOException;
 import java.net.URI;
-import lu.kbra.webcal_cmp.files.DownloadFileName;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,8 +32,10 @@ import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.RequestOptions;
 import com.microsoft.playwright.options.WaitUntilState;
 
-import lombok.extern.slf4j.Slf4j;
+import lu.kbra.webcal_cmp.files.DownloadFileName;
 import lu.kbra.webcal_cmp.moodle.MoodleHtmlParser.Course;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Browser-backed Moodle access. The course overview is filled by JavaScript, and the authenticated
@@ -59,7 +60,7 @@ public class MoodleBrowserClient {
 	private static final int SSO_TRANSITION_TIMEOUT_MS = 12_000;
 	private static final int SSO_TOTAL_TIMEOUT_MS = 90_000;
 	private static final String COURSE_VIEW = "[data-region='courses-view']";
-	private static final String COURSE_CARDS = COURSE_VIEW + " [data-region='course-content'][data-course-id]";
+	private static final String COURSE_CARDS = MoodleBrowserClient.COURSE_VIEW + " [data-region='course-content'][data-course-id]";
 	private static final int NAVIGATION_TIMEOUT_MS = 60_000;
 	private static final int RENDER_TIMEOUT_MS = 30_000;
 	private static final int MAX_COURSE_PAGES = 100;
@@ -99,8 +100,8 @@ public class MoodleBrowserClient {
 			context = browser
 					.newContext(new Browser.NewContextOptions().setLocale("fr-BE").setAcceptDownloads(true).setViewportSize(1280, 900));
 			final Page page = context.newPage();
-			page.setDefaultTimeout(RENDER_TIMEOUT_MS);
-			page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+			page.setDefaultTimeout(MoodleBrowserClient.RENDER_TIMEOUT_MS);
+			page.setDefaultNavigationTimeout(MoodleBrowserClient.NAVIGATION_TIMEOUT_MS);
 			return new Session(playwright, browser, context, page);
 		} catch (final RuntimeException e) {
 			if (context != null) {
@@ -117,11 +118,12 @@ public class MoodleBrowserClient {
 	}
 
 	static boolean isMoodleUri(final URI uri) {
-		return trustedHost(uri, MOODLE_HOST);
+		return MoodleBrowserClient.trustedHost(uri, MoodleBrowserClient.MOODLE_HOST);
 	}
 
 	static boolean isIdentityProviderLogin(final URI uri) {
-		return trustedHost(uri, IDP_HOST) && IDP_LOGIN_PATH.equals(uri.getPath());
+		return MoodleBrowserClient.trustedHost(uri, MoodleBrowserClient.IDP_HOST)
+				&& MoodleBrowserClient.IDP_LOGIN_PATH.equals(uri.getPath());
 	}
 
 	private static boolean trustedHost(final URI uri, final String host) {
@@ -130,15 +132,15 @@ public class MoodleBrowserClient {
 
 	/** Extracts the SAML provider URL without confusing it with Moodle's local login form. */
 	static URI samlProvider(final String html, final URI pageUri) throws IOException {
-		if (!isMoodleUri(pageUri)) {
+		if (!MoodleBrowserClient.isMoodleUri(pageUri)) {
 			throw new IOException("Unexpected SAML provider page: " + pageUri.getHost());
 		}
-		final Element button = Jsoup.parse(html, pageUri.toString()).selectFirst(LOGIN_BUTTON);
+		final Element button = Jsoup.parse(html, pageUri.toString()).selectFirst(MoodleBrowserClient.LOGIN_BUTTON);
 		if (button == null) {
 			return null;
 		}
 		final URI result = pageUri.resolve(button.attr("href"));
-		if (!isMoodleUri(result) || !"/auth/saml2/login.php".equals(result.getPath())) {
+		if (!MoodleBrowserClient.isMoodleUri(result) || !"/auth/saml2/login.php".equals(result.getPath())) {
 			throw new IOException("Refusing an untrusted Moodle identity-provider URL");
 		}
 		return result;
@@ -156,26 +158,26 @@ public class MoodleBrowserClient {
 	}
 
 	static SsoPage ssoPage(final URI uri, final String html) throws IOException {
-		if (!isMoodleUri(uri) && !trustedHost(uri, IDP_HOST)) {
+		if (!MoodleBrowserClient.isMoodleUri(uri) && !MoodleBrowserClient.trustedHost(uri, MoodleBrowserClient.IDP_HOST)) {
 			throw new IOException("Unexpected host during Moodle SSO: " + (uri == null ? "null" : uri.getHost()));
 		}
 		final Document doc = Jsoup.parse(html, uri.toString());
-		if (isMoodleUri(uri) && samlProvider(html, uri) != null) {
+		if (MoodleBrowserClient.isMoodleUri(uri) && MoodleBrowserClient.samlProvider(html, uri) != null) {
 			return SsoPage.MOODLE_PROVIDER;
 		}
-		if (doc.selectFirst(SAML_FORM) != null) {
+		if (doc.selectFirst(MoodleBrowserClient.SAML_FORM) != null) {
 			return SsoPage.SAML_FORM;
 		}
-		if (trustedHost(uri, IDP_HOST)) {
-			if (doc.selectFirst(PASSWORD_FORM) != null) {
-				if (!isIdentityProviderLogin(uri)) {
+		if (MoodleBrowserClient.trustedHost(uri, MoodleBrowserClient.IDP_HOST)) {
+			if (doc.selectFirst(MoodleBrowserClient.PASSWORD_FORM) != null) {
+				if (!MoodleBrowserClient.isIdentityProviderLogin(uri)) {
 					throw new IOException("Refusing password form at unexpected IdP path: " + uri.getPath());
 				}
 				return SsoPage.IDP_CREDENTIALS;
 			}
 			return doc.selectFirst("meta[http-equiv=refresh][content]") != null ? SsoPage.META_REFRESH : SsoPage.PENDING;
 		}
-		if (doc.selectFirst(PASSWORD_FORM) != null || "/login/index.php".equals(uri.getPath())) {
+		if (doc.selectFirst(MoodleBrowserClient.PASSWORD_FORM) != null || "/login/index.php".equals(uri.getPath())) {
 			return SsoPage.LOCAL_LOGIN;
 		}
 		if (uri.getPath().startsWith("/auth/saml2/")) {
@@ -186,17 +188,18 @@ public class MoodleBrowserClient {
 
 	/** Credentials may only be submitted back to the HERS SimpleSAML login handler. */
 	static URI credentialFormTarget(final String html, final URI pageUri) throws IOException {
-		if (!isIdentityProviderLogin(pageUri)) {
+		if (!MoodleBrowserClient.isIdentityProviderLogin(pageUri)) {
 			throw new IOException("Refusing credentials outside the SimpleSAML login handler");
 		}
-		final Element form = Jsoup.parse(html, pageUri.toString()).selectFirst(PASSWORD_FORM);
+		final Element form = Jsoup.parse(html, pageUri.toString()).selectFirst(MoodleBrowserClient.PASSWORD_FORM);
 		if (form == null) {
 			throw new IOException("No SimpleSAML password form found");
 		}
 		final URI target = pageUri
 				.resolve(form.hasAttr("action") && !form.attr("action").isBlank() ? form.attr("action") : pageUri.toString());
-		if (!isIdentityProviderLogin(target)) {
-			throw new IOException("Refusing credential form action outside SimpleSAML: " + safeLocation(target.toString()));
+		if (!MoodleBrowserClient.isIdentityProviderLogin(target)) {
+			throw new IOException(
+					"Refusing credential form action outside SimpleSAML: " + MoodleBrowserClient.safeLocation(target.toString()));
 		}
 		if (!"post".equalsIgnoreCase(form.attr("method"))) {
 			throw new IOException("Refusing credential form without POST method");
@@ -206,16 +209,16 @@ public class MoodleBrowserClient {
 
 	/** Validate the action before submitting a form carrying SAML assertions. */
 	static URI samlFormTarget(final String html, final URI pageUri) throws IOException {
-		final Element form = Jsoup.parse(html, pageUri.toString()).selectFirst(SAML_FORM);
+		final Element form = Jsoup.parse(html, pageUri.toString()).selectFirst(MoodleBrowserClient.SAML_FORM);
 		if (form == null) {
 			throw new IOException("No SAML POST form found");
 		}
 		final URI target = pageUri
 				.resolve(form.hasAttr("action") && !form.attr("action").isBlank() ? form.attr("action") : pageUri.toString());
-		if (!isMoodleUri(target) && !trustedHost(target, IDP_HOST)) {
+		if (!MoodleBrowserClient.isMoodleUri(target) && !MoodleBrowserClient.trustedHost(target, MoodleBrowserClient.IDP_HOST)) {
 			throw new IOException("Refusing SAML form action outside HERS: " + target.getHost());
 		}
-		if (form.selectFirst("input[name=SAMLResponse]") != null && !isMoodleUri(target)) {
+		if (form.selectFirst("input[name=SAMLResponse]") != null && !MoodleBrowserClient.isMoodleUri(target)) {
 			throw new IOException("Refusing to send SAMLResponse anywhere except Moodle");
 		}
 		if (!"post".equalsIgnoreCase(form.attr("method"))) {
@@ -234,7 +237,7 @@ public class MoodleBrowserClient {
 			throw new IOException("SAML refresh has no URL");
 		}
 		final URI target = pageUri.resolve(matcher.group(1).strip().replaceAll("^[\\\"']|[\\\"']$", ""));
-		if (!isMoodleUri(target) && !trustedHost(target, IDP_HOST)) {
+		if (!MoodleBrowserClient.isMoodleUri(target) && !MoodleBrowserClient.trustedHost(target, MoodleBrowserClient.IDP_HOST)) {
 			throw new IOException("Refusing SAML refresh outside HERS: " + target.getHost());
 		}
 		return target;
@@ -270,31 +273,32 @@ public class MoodleBrowserClient {
 		public List<Course> enrolledCourses(final URI uri) throws IOException {
 			this.navigateAuthenticated(uri);
 			try {
-				this.page.locator(COURSE_VIEW).waitFor(new Locator.WaitForOptions().setTimeout(RENDER_TIMEOUT_MS));
+				this.page.locator(MoodleBrowserClient.COURSE_VIEW)
+						.waitFor(new Locator.WaitForOptions().setTimeout(MoodleBrowserClient.RENDER_TIMEOUT_MS));
 				// Moodle's overview is populated by a JavaScript/AJAX course renderer.
 				this.page.waitForFunction("""
 						() => !!document.querySelector('[data-region="courses-view"] '
 						  + '[data-region="course-content"][data-course-id]')
-						""", null, new Page.WaitForFunctionOptions().setTimeout(RENDER_TIMEOUT_MS));
+						""", null, new Page.WaitForFunctionOptions().setTimeout(MoodleBrowserClient.RENDER_TIMEOUT_MS));
 				final Map<String, Course> courses = new LinkedHashMap<>();
 				int expectedTotal = 0;
-				for (int i = 0; i < MAX_COURSE_PAGES; i++) {
+				for (int i = 0; i < MoodleBrowserClient.MAX_COURSE_PAGES; i++) {
 					final String html = this.page.content();
 					for (final Course course : MoodleHtmlParser.courses(html, URI.create(this.page.url()))) {
 						courses.putIfAbsent(course.id(), course);
 					}
-					final String total = this.page.locator(COURSE_VIEW).getAttribute("data-totalcoursecount");
+					final String total = this.page.locator(MoodleBrowserClient.COURSE_VIEW).getAttribute("data-totalcoursecount");
 					if (total != null && total.matches("[0-9]+")) {
 						expectedTotal = Math.max(expectedTotal, Integer.parseInt(total));
 					}
-					final Locator next = this.page.locator(COURSE_VIEW
+					final Locator next = this.page.locator(MoodleBrowserClient.COURSE_VIEW
 							+ " [data-region='paging-bar'] [data-control='next']:not(.disabled):not([aria-disabled='true']) a[data-region='page-link']");
 					if (next.count() == 0) {
 						break;
 					}
-					final Locator cards = this.page.locator(COURSE_CARDS);
+					final Locator cards = this.page.locator(MoodleBrowserClient.COURSE_CARDS);
 					final String firstId = cards.count() == 0 ? "" : cards.first().getAttribute("data-course-id");
-					final String pageNo = this.page.locator(COURSE_VIEW + " [data-region='paging-bar']")
+					final String pageNo = this.page.locator(MoodleBrowserClient.COURSE_VIEW + " [data-region='paging-bar']")
 							.first()
 							.getAttribute("data-active-page-number");
 					next.first().click();
@@ -307,7 +311,7 @@ public class MoodleBrowserClient {
 							}
 							""",
 							Map.of("pageNo", pageNo == null ? "" : pageNo, "firstId", firstId == null ? "" : firstId),
-							new Page.WaitForFunctionOptions().setTimeout(RENDER_TIMEOUT_MS));
+							new Page.WaitForFunctionOptions().setTimeout(MoodleBrowserClient.RENDER_TIMEOUT_MS));
 				}
 				if (courses.isEmpty()) {
 					throw new IOException("No Moodle course cards were rendered at " + uri
@@ -317,7 +321,7 @@ public class MoodleBrowserClient {
 					throw new IOException("Moodle rendered only " + courses.size() + " of " + expectedTotal
 							+ " enrolled courses; pagination/JS loading is incomplete");
 				}
-				log.info("Moodle Playwright discovered {} enrolled courses", courses.size());
+				MoodleBrowserClient.log.info("Moodle Playwright discovered {} enrolled courses", courses.size());
 				return List.copyOf(courses.values());
 			} catch (final PlaywrightException e) {
 				throw new IOException(
@@ -331,7 +335,8 @@ public class MoodleBrowserClient {
 		public String courseHtml(final URI uri) throws IOException {
 			this.navigateAuthenticated(uri);
 			try {
-				this.page.locator("#region-main .course-content").waitFor(new Locator.WaitForOptions().setTimeout(RENDER_TIMEOUT_MS));
+				this.page.locator("#region-main .course-content")
+						.waitFor(new Locator.WaitForOptions().setTimeout(MoodleBrowserClient.RENDER_TIMEOUT_MS));
 				return this.page.content();
 			} catch (final PlaywrightException e) {
 				throw new IOException("Moodle did not render the course content for " + uri, e);
@@ -340,15 +345,16 @@ public class MoodleBrowserClient {
 
 		/** Read external URL activities without fetching external pages. */
 		public URI externalUrl(final URI uri) throws IOException {
-			requireMoodle(uri);
+			MoodleBrowserClient.requireMoodle(uri);
 			URI current = uri;
 			try {
 				for (int i = 0; i < 8; i++) {
 					final APIResponse response = this.context.request()
-							.get(current.toString(), RequestOptions.create().setMaxRedirects(0).setTimeout(NAVIGATION_TIMEOUT_MS));
+							.get(current.toString(),
+									RequestOptions.create().setMaxRedirects(0).setTimeout(MoodleBrowserClient.NAVIGATION_TIMEOUT_MS));
 					try {
 						if (response.status() >= 300 && response.status() < 400) {
-							final String location = header(response, "location");
+							final String location = MoodleBrowserClient.header(response, "location");
 							if (location.isBlank()) {
 								throw new IOException("Moodle URL redirect has no Location header");
 							}
@@ -356,7 +362,7 @@ public class MoodleBrowserClient {
 							if (!"https".equalsIgnoreCase(target.getScheme()) && !"http".equalsIgnoreCase(target.getScheme())) {
 								throw new IOException("Unsupported URL activity redirect scheme");
 							}
-							if (!isMoodleUri(target)) {
+							if (!MoodleBrowserClient.isMoodleUri(target)) {
 								if ("hers.be".equalsIgnoreCase(target.getHost())
 										|| target.getHost() != null && target.getHost().endsWith(".hers.be")) {
 									throw new IOException("Moodle URL was redirected to HERS SSO, session may have expired");
@@ -374,7 +380,7 @@ public class MoodleBrowserClient {
 								.select("#region-main .urlworkaround a[href], #region-main div[role=main] a[href]")) {
 							final URI target = current.resolve(anchor.attr("href"));
 							if (("https".equalsIgnoreCase(target.getScheme()) || "http".equalsIgnoreCase(target.getScheme()))
-									&& !target.equals(uri) && !isMoodleUri(target)) {
+									&& !target.equals(uri) && !MoodleBrowserClient.isMoodleUri(target)) {
 								return target;
 							}
 						}
@@ -391,7 +397,7 @@ public class MoodleBrowserClient {
 
 		/** Downloads resource attachments with the authenticated browser's cookies. */
 		public MoodleDownload downloadResource(final URI uri) throws IOException, InterruptedException {
-			requireMoodle(uri);
+			MoodleBrowserClient.requireMoodle(uri);
 			IOException failure = null;
 			for (int attempt = 1; attempt <= MoodleBrowserClient.this.retries; attempt++) {
 				try {
@@ -401,7 +407,7 @@ public class MoodleBrowserClient {
 				} catch (final IOException e) {
 					failure = e;
 				}
-				log.warn("Moodle attachment {} failed (attempt {}/{}): {}",
+				MoodleBrowserClient.log.warn("Moodle attachment {} failed (attempt {}/{}): {}",
 						uri.getPath(),
 						attempt,
 						MoodleBrowserClient.this.retries,
@@ -424,9 +430,9 @@ public class MoodleBrowserClient {
 					throw new IOException("Moodle attachment returned HTTP " + response.status());
 				}
 				final URI actual = URI.create(response.url());
-				requireMoodle(actual);
-				final String contentType = header(response, "content-type").toLowerCase(Locale.ROOT);
-				final String disposition = header(response, "content-disposition");
+				MoodleBrowserClient.requireMoodle(actual);
+				final String contentType = MoodleBrowserClient.header(response, "content-type").toLowerCase(Locale.ROOT);
+				final String disposition = MoodleBrowserClient.header(response, "content-disposition");
 				final byte[] bytes = response.body();
 				if (bytes.length == 0) {
 					throw new IOException("Empty Moodle attachment response");
@@ -439,7 +445,7 @@ public class MoodleBrowserClient {
 					if (document.selectFirst("form:has(input[type=password]), a.login-identityprovider-btn") != null) {
 						throw new IOException("Moodle session expired during attachment download");
 					}
-					final URI target = resourceFileTarget(document, actual);
+					final URI target = MoodleBrowserClient.resourceFileTarget(document, actual);
 					if (target == null) {
 						throw new IOException("Moodle attachment returned HTML without a file link or inline image: " + uri);
 					}
@@ -448,7 +454,7 @@ public class MoodleBrowserClient {
 				final Path temp = Files.createTempFile("moodle-file-", ".download");
 				try {
 					Files.write(temp, bytes);
-					return new MoodleDownload(temp, fileName(disposition, actual, contentType));
+					return new MoodleDownload(temp, MoodleBrowserClient.fileName(disposition, actual, contentType));
 				} catch (final IOException e) {
 					Files.deleteIfExists(temp);
 					throw e;
@@ -459,28 +465,33 @@ public class MoodleBrowserClient {
 		}
 
 		private void navigateAuthenticated(final URI uri) throws IOException {
-			requireMoodle(uri);
+			MoodleBrowserClient.requireMoodle(uri);
 			try {
 				this.page.navigate(uri.toString(),
-						new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(NAVIGATION_TIMEOUT_MS));
+						new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+								.setTimeout(MoodleBrowserClient.NAVIGATION_TIMEOUT_MS));
 				this.completeSamlLogin();
-				if (!isMoodleUri(URI.create(this.page.url()))) {
-					throw new IOException("Moodle authentication did not return to Moodle (at " + safeLocation(this.page.url()) + ")");
+				if (!MoodleBrowserClient.isMoodleUri(URI.create(this.page.url()))) {
+					throw new IOException("Moodle authentication did not return to Moodle (at "
+							+ MoodleBrowserClient.safeLocation(this.page.url()) + ")");
 				}
 				// SAML may land on /auth/saml2/sp/acs.php, or on a Moodle home page.
 				// Only the original course URL tells us whether the session is usable.
 				if (!URI.create(this.page.url()).getPath().equals(uri.getPath())) {
 					this.page.navigate(uri.toString(),
-							new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(NAVIGATION_TIMEOUT_MS));
+							new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+									.setTimeout(MoodleBrowserClient.NAVIGATION_TIMEOUT_MS));
 					this.completeSamlLogin();
 				}
-				final SsoPage finalState = ssoPage(URI.create(this.page.url()), this.page.content());
+				final SsoPage finalState = MoodleBrowserClient.ssoPage(URI.create(this.page.url()), this.page.content());
 				if (finalState != SsoPage.AUTHENTICATED) {
 					throw new IOException("Moodle is not authenticated after SAML flow (state: " + finalState + ", page: "
-							+ safeLocation(this.page.url()) + ")");
+							+ MoodleBrowserClient.safeLocation(this.page.url()) + ")");
 				}
 			} catch (final PlaywrightException e) {
-				throw new IOException("Moodle browser navigation failed for " + uri + " (last page: " + safeLocation(this.page.url()) + ")",
+				throw new IOException(
+						"Moodle browser navigation failed for " + uri + " (last page: " + MoodleBrowserClient.safeLocation(this.page.url())
+								+ ")",
 						e);
 			}
 		}
@@ -488,52 +499,52 @@ public class MoodleBrowserClient {
 		private void completeSamlLogin() throws IOException {
 			boolean credentialsSubmitted = false;
 			boolean providerClicked = false;
-			final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SSO_TOTAL_TIMEOUT_MS);
+			final long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(MoodleBrowserClient.SSO_TOTAL_TIMEOUT_MS);
 			for (int i = 0; i < 24; i++) {
 				if (System.nanoTime() > deadline) {
-					throw new IOException("Moodle SAML authentication exceeded " + SSO_TOTAL_TIMEOUT_MS + "ms (at "
-							+ safeLocation(this.page.url()) + ")");
+					throw new IOException("Moodle SAML authentication exceeded " + MoodleBrowserClient.SSO_TOTAL_TIMEOUT_MS + "ms (at "
+							+ MoodleBrowserClient.safeLocation(this.page.url()) + ")");
 				}
 				final String url = this.page.url();
 				final URI current = URI.create(url);
 				final String html;
 				try {
-					page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+					this.page.waitForLoadState(LoadState.DOMCONTENTLOADED);
 					html = this.page.content();
 				} catch (final PlaywrightException e) {
 					// A JavaScript redirect can destroy the page context during inspection.
 					if (!url.equals(this.page.url())) {
 						continue;
 					}
-					throw new IOException("Unable to inspect Moodle SAML page " + safeLocation(url), e);
+					throw new IOException("Unable to inspect Moodle SAML page " + MoodleBrowserClient.safeLocation(url), e);
 				}
-				final SsoPage state = ssoPage(current, html);
-				log.debug("Moodle SSO transition {}: {} ({})", i + 1, safeLocation(url), state);
+				final SsoPage state = MoodleBrowserClient.ssoPage(current, html);
+				MoodleBrowserClient.log.debug("Moodle SSO transition {}: {} ({})", i + 1, MoodleBrowserClient.safeLocation(url), state);
 				switch (state) {
 				case AUTHENTICATED -> {
 					return;
 				}
-				case LOCAL_LOGIN -> throw new IOException(
-						"Moodle has no usable MyHERS SSO button at " + safeLocation(url) + "; refusing Moodle's local password form");
+				case LOCAL_LOGIN -> throw new IOException("Moodle has no usable MyHERS SSO button at "
+						+ MoodleBrowserClient.safeLocation(url) + "; refusing Moodle's local password form");
 				case MOODLE_PROVIDER -> {
 					if (providerClicked) {
 						throw new IOException("Moodle returned to its login page after MyHERS SSO "
-								+ "(check SAML result and browser cookies); at " + safeLocation(url));
+								+ "(check SAML result and browser cookies); at " + MoodleBrowserClient.safeLocation(url));
 					}
 					providerClicked = true;
-					this.page.locator(LOGIN_BUTTON).first().click();
+					this.page.locator(MoodleBrowserClient.LOGIN_BUTTON).first().click();
 				}
 				case IDP_CREDENTIALS -> {
-					credentialFormTarget(html, current);
+					MoodleBrowserClient.credentialFormTarget(html, current);
 					if (credentialsSubmitted) {
 						throw new IOException("SimpleSAML returned the password form after login "
-								+ "(incorrect credentials, MFA or additional confirmation); at " + safeLocation(url));
+								+ "(incorrect credentials, MFA or additional confirmation); at " + MoodleBrowserClient.safeLocation(url));
 					}
-					final Locator form = this.page.locator(PASSWORD_FORM).first();
+					final Locator form = this.page.locator(MoodleBrowserClient.PASSWORD_FORM).first();
 					final Locator user = form
 							.locator("input[name='username'], input[name='user'], " + "input[name='email'], input[type='email']");
 					if (user.count() == 0) {
-						throw new IOException("SimpleSAML login form has no username field at " + safeLocation(url));
+						throw new IOException("SimpleSAML login form has no username field at " + MoodleBrowserClient.safeLocation(url));
 					}
 					// The credentials are entered ONLY on the known SimpleSAML endpoint.
 					user.first().fill(MoodleBrowserClient.this.username);
@@ -550,13 +561,15 @@ public class MoodleBrowserClient {
 					// SimpleSAML often responds with an HTML form containing SAMLResponse,
 					// which normally auto-posts through JavaScript. If that script does not
 					// run, explicitly submit the same form with the authenticated browser.
-					final URI target = samlFormTarget(html, current);
-					log.debug("Submitting HERS SAML form to {}", safeLocation(target.toString()));
+					final URI target = MoodleBrowserClient.samlFormTarget(html, current);
+					MoodleBrowserClient.log.debug("Submitting HERS SAML form to {}", MoodleBrowserClient.safeLocation(target.toString()));
 					try {
-						this.page.locator(SAML_FORM).first().evaluate("form => HTMLFormElement.prototype.submit.call(form)");
+						this.page.locator(MoodleBrowserClient.SAML_FORM)
+								.first()
+								.evaluate("form => HTMLFormElement.prototype.submit.call(form)");
 					} catch (final PlaywrightException e) {
 						if (url.equals(this.page.url())) {
-							throw new IOException("Could not submit HERS SAML form at " + safeLocation(url), e);
+							throw new IOException("Could not submit HERS SAML form at " + MoodleBrowserClient.safeLocation(url), e);
 						}
 					}
 					// Wait for any navigation, not just an immediate redirect to Moodle.
@@ -564,23 +577,25 @@ public class MoodleBrowserClient {
 					this.waitForRedirect(url, deadline);
 				}
 				case META_REFRESH -> {
-					final URI target = samlRefreshTarget(html, current);
+					final URI target = MoodleBrowserClient.samlRefreshTarget(html, current);
 					this.page.navigate(target.toString(),
-							new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(NAVIGATION_TIMEOUT_MS));
+							new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+									.setTimeout(MoodleBrowserClient.NAVIGATION_TIMEOUT_MS));
 				}
 				case PENDING -> this.waitForSamlPageUpdate(url, deadline);
 				}
 			}
-			throw new IOException("Too many Moodle SAML authentication transitions (at " + safeLocation(this.page.url()) + ")");
+			throw new IOException(
+					"Too many Moodle SAML authentication transitions (at " + MoodleBrowserClient.safeLocation(this.page.url()) + ")");
 		}
 
 		private void waitForRedirect(final String previous, final long deadline) throws IOException {
 			try {
 				this.page.waitForURL(url -> !url.equals(previous),
-						new Page.WaitForURLOptions().setTimeout(remainingSsoWait(deadline)).setWaitUntil(WaitUntilState.COMMIT));
+						new Page.WaitForURLOptions().setTimeout(Session.remainingSsoWait(deadline)).setWaitUntil(WaitUntilState.COMMIT));
 			} catch (final PlaywrightException e) {
 				throw new IOException(
-						"SAML form was submitted but did not navigate away from " + safeLocation(previous)
+						"SAML form was submitted but did not navigate away from " + MoodleBrowserClient.safeLocation(previous)
 								+ "; check the SAML response/IdP logs",
 						e);
 			}
@@ -594,17 +609,18 @@ public class MoodleBrowserClient {
 						oldUrl => location.href !== oldUrl || !!document.querySelector(
 						  'form:has(input[type="password"]), form:has(input[name="SAMLResponse"]), '
 						  + 'form:has(input[name="SAMLRequest"]), meta[http-equiv="refresh"]')
-						""", previous, new Page.WaitForFunctionOptions().setTimeout(remainingSsoWait(deadline)));
+						""", previous, new Page.WaitForFunctionOptions().setTimeout(Session.remainingSsoWait(deadline)));
 			} catch (final PlaywrightException e) {
 				throw new IOException(
-						"Moodle SAML flow stalled at " + safeLocation(this.page.url())
+						"Moodle SAML flow stalled at " + MoodleBrowserClient.safeLocation(this.page.url())
 								+ " (no SAML form or redirect appeared; possible consent/MFA page " + "or JavaScript error)",
 						e);
 			}
 		}
 
 		private static double remainingSsoWait(final long deadline) {
-			return Math.min(SSO_TRANSITION_TIMEOUT_MS, Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
+			return Math.min(MoodleBrowserClient.SSO_TRANSITION_TIMEOUT_MS,
+					Math.max(1, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())));
 		}
 
 		@Override
@@ -632,7 +648,7 @@ public class MoodleBrowserClient {
 	}
 
 	private static void requireMoodle(final URI uri) throws IOException {
-		if (!isMoodleUri(uri)) {
+		if (!MoodleBrowserClient.isMoodleUri(uri)) {
 			throw new IOException("Refusing non-Moodle resource URI: " + uri);
 		}
 	}
@@ -643,11 +659,11 @@ public class MoodleBrowserClient {
 	 * image sources.
 	 */
 	static URI resourceFileTarget(final String html, final URI pageUri) throws IOException {
-		return resourceFileTarget(Jsoup.parse(html, pageUri.toString()), pageUri);
+		return MoodleBrowserClient.resourceFileTarget(Jsoup.parse(html, pageUri.toString()), pageUri);
 	}
 
 	private static URI resourceFileTarget(final Document document, final URI pageUri) throws IOException {
-		requireMoodle(pageUri);
+		MoodleBrowserClient.requireMoodle(pageUri);
 		// Moodle's "Display: Embed" mode puts a real image in the resource page,
 		// not a link. Prefer this element over any unrelated anchor on the page.
 		Element link = document.selectFirst("""
@@ -678,7 +694,7 @@ public class MoodleBrowserClient {
 		} catch (final IllegalArgumentException e) {
 			throw new IOException("Moodle resource preview has an invalid attachment URL", e);
 		}
-		requireMoodle(target);
+		MoodleBrowserClient.requireMoodle(target);
 		if (target.equals(pageUri)) {
 			throw new IOException("Moodle resource preview links back to itself");
 		}

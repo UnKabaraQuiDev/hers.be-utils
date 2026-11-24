@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -71,10 +70,13 @@ public class IcsParser {
 		};
 	}
 
-	@Cacheable("parsedCal")
 	public Calendar getCalendar() throws IOException, ParserException {
 		final String ics = this.fetchService.downloadCalendar();
 		return this.parse(ics);
+	}
+
+	public Calendar getFreshCalendar() throws IOException, ParserException {
+		return this.parse(this.fetchService.downloadFreshCalendar());
 	}
 
 	public List<CalendarEvent> eventsForToday(final List<CalendarEvent> events) {
@@ -105,14 +107,13 @@ public class IcsParser {
 		for (final Component component : calendar.getComponents(Component.VEVENT)) {
 			final VEvent event = (VEvent) component;
 
-			if (event.getUid().isEmpty() || IcsParser.GROUP_EVENT_NAME.equals(event.getName())) {
+			if (event.getUid().isEmpty() || IcsParser.isGroupEvent(event)) {
 				continue;
 			}
 
 			final String uid = event.getUid().map(Uid::getValue).orElseThrow();
 
 			String summary = event.getSummary().map(Summary::getValue).orElse("");
-			this.fixDescription(event, summary);
 			summary = this.fixSummary(summary);
 
 			final String location = event.getLocation().map(Location::getValue).orElse("");
@@ -124,6 +125,10 @@ public class IcsParser {
 		}
 
 		return events;
+	}
+
+	private static boolean isGroupEvent(final VEvent event) {
+		return event.getSummary().map(Summary::getValue).map(IcsParser.GROUP_EVENT_NAME::equals).orElse(false);
 	}
 
 	private void fixDescription(final VEvent event, final String summary) {
@@ -146,7 +151,7 @@ public class IcsParser {
 		for (final VEvent event : events) {
 			event.getAlarms().clear();
 
-			if (event.getSummary().isEmpty() || event.getUid().isEmpty() || IcsParser.GROUP_EVENT_NAME.equals(event.getName())) {
+			if (event.getSummary().isEmpty() || event.getUid().isEmpty() || IcsParser.isGroupEvent(event)) {
 				continue;
 			}
 
@@ -159,11 +164,11 @@ public class IcsParser {
 
 		// Group events by their calendar date
 		final Map<LocalDate, List<VEvent>> eventsByDay = events.stream()
-				.filter(e -> !(e.getUid().isEmpty() || IcsParser.GROUP_EVENT_NAME.equals(e.getName())))
+				.filter(e -> !(e.getUid().isEmpty() || IcsParser.isGroupEvent(e)))
 				.collect(Collectors.groupingBy(event -> event.getDateTimeStart()
 						.map(dt -> this.toInstant(dt.getDate()))
 						.orElseThrow()
-						.atZone(ZoneId.systemDefault())
+						.atZone(IcsParser.ZONE)
 						.toLocalDate()));
 
 		for (final List<VEvent> dayEvents : eventsByDay.values()) {
@@ -243,7 +248,7 @@ public class IcsParser {
 	private String generateUid(final VEvent event) {
 		final LocalDate startDate = event.getDateTimeStart()
 				.map(dt -> this.toInstant(dt.getDate()))
-				.map(instant -> instant.atZone(ZoneId.systemDefault()).toLocalDate())
+				.map(instant -> instant.atZone(IcsParser.ZONE).toLocalDate())
 				.orElseThrow();
 
 		final String input = this.className + "|" + startDate;

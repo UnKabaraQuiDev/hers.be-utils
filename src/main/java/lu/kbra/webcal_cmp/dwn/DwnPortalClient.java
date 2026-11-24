@@ -4,8 +4,6 @@ import java.io.IOException;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
 import java.net.URI;
-import java.net.URLDecoder;
-import lu.kbra.webcal_cmp.files.DownloadFileName;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,8 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -27,6 +23,8 @@ import org.jsoup.nodes.Element;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
+
+import lu.kbra.webcal_cmp.files.DownloadFileName;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -244,8 +242,8 @@ public class DwnPortalClient {
 	}
 
 	/**
-	 * Login to Moodle via its external "Se connecter avec MyHERS" provider.
-	 * Moodle's own password form must never receive the HERS SSO credentials.
+	 * Login to Moodle via its external "Se connecter avec MyHERS" provider. Moodle's own password form
+	 * must never receive the HERS SSO credentials.
 	 */
 	public Page getMoodlePage(final URI uri) throws IOException, InterruptedException {
 		DwnPortalClient.requireMoodleUri(uri);
@@ -439,15 +437,13 @@ public class DwnPortalClient {
 
 	/** Credentials may only be submitted to the HERS SimpleSAML identity provider. */
 	static boolean isIdentityProviderLoginUri(final URI uri) {
-		return uri != null && "https".equalsIgnoreCase(uri.getScheme())
-				&& "idp.hers.be".equalsIgnoreCase(uri.getHost())
+		return uri != null && "https".equalsIgnoreCase(uri.getScheme()) && "idp.hers.be".equalsIgnoreCase(uri.getHost())
 				&& "/simplesaml/module.php/core/loginuserpass".equals(uri.getPath());
 	}
 
 	private static void requireIdentityProviderLoginUri(final URI uri) throws IOException {
 		if (!DwnPortalClient.isIdentityProviderLoginUri(uri)) {
-			throw new IOException("Refusing password form outside HERS SimpleSAML loginuserpass: " + uri.getHost()
-					+ uri.getPath());
+			throw new IOException("Refusing password form outside HERS SimpleSAML loginuserpass: " + uri.getHost() + uri.getPath());
 		}
 	}
 

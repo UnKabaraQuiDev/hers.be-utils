@@ -26,7 +26,7 @@ public class MenuScheduler {
 	public void notifyMenuSameDay() {
 		this.menus.dailyNotification(false);
 	}
-	
+
 	@Scheduled(cron = "0 0 18 * * *")
 	public void notifyMenuNextDay() {
 		this.menus.dailyNotification(true);

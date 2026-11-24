@@ -9,11 +9,11 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import lu.kbra.webcal_cmp.files.FileNameNormalizer;
-
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+
+import lu.kbra.webcal_cmp.files.FileNameNormalizer;
 
 public final class PortalHtmlParser {
 

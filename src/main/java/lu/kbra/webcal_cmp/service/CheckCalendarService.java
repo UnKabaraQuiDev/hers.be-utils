@@ -5,12 +5,9 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
@@ -41,41 +38,39 @@ public class CheckCalendarService {
 
 	private boolean previousFail = false;
 
-	private void checkChanges(final Calendar cal, final boolean notifySpecialEvents) {
-		final boolean isConsideringNextDay = this.isConsideringNextDay();
-		final LocalDate effectiveDate = (isConsideringNextDay ? ZonedDateTime.now(this.zone).plusDays(1) : ZonedDateTime.now(this.zone))
-				.toLocalDate();
-
-		final List<CalendarEvent> events = this.parser.extractEvents(cal);
+	private void checkChanges(final List<CalendarEvent> events, final boolean notifySpecialEvents) {
+		final ZonedDateTime now = ZonedDateTime.now(this.zone);
+		final boolean isConsideringNextDay = now.getHour() >= 18;
+		final LocalDate effectiveDate = now.toLocalDate().plusDays(isConsideringNextDay ? 1 : 0);
 		final List<CalendarEvent> todayEvents = this.eventsForDate(events, effectiveDate);
-
 		final CachedCalendar previous = this.cache.get();
 
-		// First run, or first run of a new effective day.
-		if (previous == null || !previous.date().equals(effectiveDate)) {
-			this.cache.set(new CachedCalendar(effectiveDate, this.toMap(todayEvents)));
-
-			return;
-		}
-
-		final CalendarChanges changes = this.comparator.compare(previous.events().values().stream().toList(), todayEvents);
+		// Keep the full raw snapshot, so a lesson moved into/out of today can still be matched.
+		final CalendarChanges changes = previous == null
+				? new CalendarChanges(new HashSet<>(), new HashSet<>(), new HashSet<>(), new HashSet<>())
+				: this.comparator.compare(previous.events(), events);
+		changes.added().removeIf(e -> !this.overlaps(e, effectiveDate));
+		changes.removed().removeIf(e -> !this.overlaps(e, effectiveDate));
+		changes.modified().removeIf(e -> !this.overlaps(e.oldEvent(), effectiveDate) && !this.overlaps(e.newEvent(), effectiveDate));
 
 		// if got any modofied:
 		// remove modified events that are cancelled/tps/kept
 		// add them to warnings
 		if (!changes.modified().isEmpty()) {
 			changes.modified().removeIf(e -> {
-				if (e.newEvent().summary().toLowerCase().contains("suspendus")
-						&& !e.oldEvent().summary().toLowerCase().contains("suspendus")) {
+				if (e.newEvent().summary().toLowerCase().contains("suspendu")
+						&& !e.oldEvent().summary().toLowerCase().contains("suspendu")) {
 					changes.warning().add(new CalendarEventWarning(e.newEvent(), WarningType.CANCELLED));
 					return true;
 				}
-				if (e.oldEvent().summary().toLowerCase().contains("suspendus")
-						&& !e.newEvent().summary().toLowerCase().contains("suspendus")) {
+				if (e.oldEvent().summary().toLowerCase().contains("suspendu")
+						&& !e.newEvent().summary().toLowerCase().contains("suspendu")) {
 					changes.warning().add(new CalendarEventWarning(e.newEvent(), WarningType.KEPT_ON));
 					return true;
 				}
-				if (e.newEvent().summary().toLowerCase().contains("tp") && !e.oldEvent().summary().toLowerCase().contains("tp")) {
+				if (e.newEvent().summary().toLowerCase().contains("tp") && !e.oldEvent().summary().toLowerCase().contains("tp")
+						|| e.newEvent().summary().toLowerCase().contains("labo")
+								&& !e.oldEvent().summary().toLowerCase().contains("labo")) {
 					changes.warning().add(new CalendarEventWarning(e.newEvent(), WarningType.TP));
 					return true;
 				}
@@ -88,7 +83,7 @@ public class CheckCalendarService {
 		// add cancelled/tps to warnings
 		if (isConsideringNextDay && notifySpecialEvents) {
 			todayEvents.stream()
-					.filter(e -> e.summary().toLowerCase().contains("suspendus"))
+					.filter(e -> e.summary().toLowerCase().contains("suspendu"))
 					.map(c -> new CalendarEventWarning(c, WarningType.CANCELLED))
 					.forEach(changes.warning()::add);
 			todayEvents.stream()
@@ -105,16 +100,17 @@ public class CheckCalendarService {
 			this.pushService.sendCalendarChanged(changes);
 		}
 
-		this.cache.set(new CachedCalendar(effectiveDate, this.toMap(todayEvents)));
+		this.cache.set(new CachedCalendar(effectiveDate, events));
 	}
 
-	public void checkCalendar(final boolean checkChanges, final boolean notifySpecialEvents) {
+	public synchronized void checkCalendar(final boolean checkChanges, final boolean notifySpecialEvents) {
 		try {
-			final Calendar cal = this.parser.getCalendar();
+			final Calendar cal = this.parser.getFreshCalendar();
+			final List<CalendarEvent> rawEvents = checkChanges ? this.parser.extractEvents(cal) : List.of();
 
 			this.storeTransformed(cal);
 			if (checkChanges) {
-				this.checkChanges(cal, notifySpecialEvents);
+				this.checkChanges(rawEvents, notifySpecialEvents);
 			}
 		} catch (final ResourceAccessException e) {
 			CheckCalendarService.log.error("Couldn't download calendar.", e);
@@ -137,28 +133,19 @@ public class CheckCalendarService {
 		this.previousFail = false;
 	}
 
-	@Cacheable(value = "transformed", key = "'abc'")
 	public String storeTransformed(final Calendar cal) throws ValidationException, IOException, Exception {
-		this.cache.setTransformed(this.parser.calToString(this.parser.fixCal(cal)));
-		return this.cache.getTransformed();
-	}
-
-	private boolean isConsideringNextDay() {
-		final ZonedDateTime now = ZonedDateTime.now(this.zone);
-
-		return now.getHour() >= 18;
+		final String transformed = this.parser.calToString(this.parser.fixCal(cal));
+		this.cache.setTransformed(transformed);
+		return transformed;
 	}
 
 	private List<CalendarEvent> eventsForDate(final List<CalendarEvent> events, final LocalDate date) {
+		return events.stream().filter(event -> this.overlaps(event, date)).toList();
+	}
+
+	private boolean overlaps(final CalendarEvent event, final LocalDate date) {
 		final Instant start = date.atStartOfDay(this.zone).toInstant();
-
 		final Instant end = date.plusDays(1).atStartOfDay(this.zone).toInstant();
-
-		return events.stream().filter(event -> event.start().isBefore(end) && (event.end() == null || event.end().isAfter(start))).toList();
+		return event.start().isBefore(end) && (event.end() == null ? !event.start().isBefore(start) : event.end().isAfter(start));
 	}
-
-	private Map<String, CalendarEvent> toMap(final List<CalendarEvent> events) {
-		return events.stream().collect(Collectors.toMap(CalendarEvent::uid, Function.identity()));
-	}
-
 }
